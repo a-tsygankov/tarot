@@ -1,4 +1,5 @@
 import { createAppServices } from './app/composition-root.js';
+import { runDiagnostics } from './app/diagnostics.js';
 import { restoreTheme } from './ui/styles/themes.js';
 import { initDeckStyle } from './ui/components/card-art-registry.js';
 
@@ -10,6 +11,8 @@ import './ui/components/tarot-app.js';
  * Creates all services via DI and mounts the UI.
  */
 async function init() {
+    const bootStart = performance.now();
+
     // Restore user's theme and deck style before first paint
     restoreTheme();
     await initDeckStyle();
@@ -18,14 +21,6 @@ async function init() {
 
     // Log session start (fire-and-forget)
     services.apiService.logSessionAsync();
-
-    // Check version compatibility
-    const compat = await services.compatibilityService.checkAsync();
-    if (compat.status === 'incompatible') {
-        console.warn('Client incompatible:', compat.message);
-    } else if (compat.status === 'update_available') {
-        console.info('Update available:', compat.message);
-    }
 
     // Mount the app shell
     const appEl = document.createElement('tarot-app');
@@ -37,13 +32,8 @@ async function init() {
         container.appendChild(appEl);
     }
 
-    console.log('Tarot Oracle initialized', {
-        version: services.config.version,
-        uid: services.userContext.uid,
-        session: services.userContext.sessionId,
-        sttAvailable: services.sttService.isAvailable(),
-        ttsAvailable: services.ttsService.isAvailable(),
-    });
+    // Run diagnostics (includes API compatibility check)
+    await runDiagnostics(services, bootStart);
 }
 
 init().catch(console.error);
