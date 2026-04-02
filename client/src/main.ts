@@ -1,5 +1,6 @@
 import { createAppServices } from './app/composition-root.js';
 import { restoreTheme } from './ui/styles/themes.js';
+import { initDeckStyle } from './ui/components/card-art-registry.js';
 
 // Register all Lit components
 import './ui/components/tarot-app.js';
@@ -9,8 +10,9 @@ import './ui/components/tarot-app.js';
  * Creates all services via DI and mounts the UI.
  */
 async function init() {
-    // Restore user's theme before first paint
+    // Restore user's theme and deck style before first paint
     restoreTheme();
+    await initDeckStyle();
 
     const services = createAppServices();
 

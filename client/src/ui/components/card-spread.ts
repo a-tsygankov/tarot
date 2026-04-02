@@ -1,8 +1,10 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import type { IProgressReporter } from '../../services/IProgressReporter.js';
+import { cardBackSvg, getCardArt } from './card-art-registry.js';
 
 // Major arcana names for random draw
 const MAJOR_ARCANA = [
@@ -85,16 +87,33 @@ export class CardSpread extends LitElement {
             }
 
             .card-back {
-                background: linear-gradient(135deg, var(--purple-dim), var(--bg-card));
-                border: 1px solid var(--border);
-                color: var(--gold-dim);
-                font-size: 2em;
+                background: transparent;
+                border: none;
+                overflow: hidden;
+            }
+
+            .card-back :first-child {
+                width: 100%;
+                height: 100%;
+                border-radius: 6px;
             }
 
             .card-front {
+                background: transparent;
+                border: none;
+                overflow: hidden;
+                animation: cardReveal 0.6s ease-out;
+            }
+
+            .card-front :first-child {
+                width: 100%;
+                height: 100%;
+                border-radius: 6px;
+            }
+
+            .card-front.text-only {
                 background: linear-gradient(135deg, var(--bg-card), var(--purple-dim));
                 border: 1px solid var(--gold-dim);
-                animation: cardReveal 0.6s ease-out;
             }
 
             @keyframes cardReveal {
@@ -259,25 +278,29 @@ export class CardSpread extends LitElement {
     private _renderCardSlot(position: string, index: number) {
         const card = this._dealtCards[index];
         if (card) {
+            const art = getCardArt(card.name, 200, 345);
             return html`
                 <div class="card-slot dealt">
-                    <div class="card-face card-front">
-                        <div class="card-name">${card.name}</div>
-                        <div class="card-position">${card.position}</div>
-                        ${card.reversed ? html`<div class="card-reversed">Reversed</div>` : nothing}
+                    <div class="card-face card-front ${art ? '' : 'text-only'}">
+                        ${art ? unsafeHTML(art) : html`
+                            <div class="card-name">${card.name}</div>
+                            <div class="card-position">${card.position}</div>
+                            ${card.reversed ? html`<div class="card-reversed">Reversed</div>` : nothing}
+                        `}
                     </div>
                 </div>
             `;
         }
 
         const canDeal = index === this._dealtCards.length;
+        const backArt = cardBackSvg(200, 345);
         return html`
             <div
                 class="card-slot"
                 style="opacity: ${canDeal ? 1 : 0.4}"
                 @click=${canDeal ? () => this._dealCard(position) : undefined}
             >
-                <div class="card-face card-back">✦</div>
+                <div class="card-face card-back">${unsafeHTML(backArt)}</div>
             </div>
         `;
     }

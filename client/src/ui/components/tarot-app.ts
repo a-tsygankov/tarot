@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, query, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 
@@ -10,6 +10,9 @@ import './reading-display.js';
 import './followup-chat.js';
 import './settings-panel.js';
 import './voice-mode.js';
+import './debug-console.js';
+import './star-background.js';
+import type { DebugConsole } from './debug-console.js';
 
 export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'settings' | 'voice';
 
@@ -30,7 +33,7 @@ export class TarotApp extends LitElement {
 
             .screen {
                 flex: 1;
-                padding: 0 1em 1em;
+                padding: 0 1em 5em; /* extra bottom padding for bottom bar */
                 animation: fadeIn 0.3s ease-out;
             }
 
@@ -93,11 +96,56 @@ export class TarotApp extends LitElement {
                 margin-top: 0.3em;
             }
 
-            .status-bar {
-                padding: 0.6em 1em;
-                text-align: center;
-                color: var(--text-faint);
-                font-size: 0.8em;
+            /* ── Bottom bar ── */
+            .bottom-bar {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                max-width: 480px;
+                margin: 0 auto;
+                background: rgba(10, 7, 20, 0.97);
+                border-top: 1px solid var(--border);
+                padding: 0.5em 1em calc(0.5em + env(safe-area-inset-bottom, 0px));
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 0.5em;
+                z-index: 50;
+            }
+
+            .coffee-link {
+                background: var(--gold);
+                color: #1a0800;
+                font-size: 0.75em;
+                font-weight: 700;
+                padding: 0.35em 0.7em;
+                border-radius: 7px;
+                font-family: var(--font-display);
+                text-decoration: none;
+                white-space: nowrap;
+                transition: opacity 0.2s;
+            }
+
+            .coffee-link:hover {
+                opacity: 0.85;
+            }
+
+            .console-toggle {
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--text-dim);
+                font-size: 0.75em;
+                padding: 0.35em 0.7em;
+                border-radius: 7px;
+                font-family: var(--font-display);
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .console-toggle:hover {
+                border-color: var(--gold-dim);
+                color: var(--gold);
             }
         `,
     ];
@@ -105,7 +153,9 @@ export class TarotApp extends LitElement {
     private _services!: AppServices;
 
     @state() private _screen: AppScreen = 'home';
-    @state() private _statusMessage = '';
+    @state() private _debugMode = false;
+
+    @query('debug-console') private _debugConsole!: DebugConsole;
 
     /** Inject services from composition root. */
     setServices(services: AppServices): void {
@@ -122,18 +172,32 @@ export class TarotApp extends LitElement {
 
     override render() {
         return html`
+            <star-background></star-background>
+
             <tarot-header
                 .screen=${this._screen}
                 @navigate=${(e: CustomEvent<AppScreen>) => this.navigate(e.detail)}
+                @toggle-debug=${this._onToggleDebug}
             ></tarot-header>
 
             <div class="screen">
                 ${this._renderScreen()}
             </div>
 
-            ${this._statusMessage ? html`
-                <div class="status-bar">${this._statusMessage}</div>
-            ` : ''}
+            <div class="bottom-bar">
+                ${this._debugMode ? html`
+                    <button class="console-toggle" @click=${this._toggleConsole}>
+                        🔍 Console
+                    </button>
+                ` : html`
+                    <a class="coffee-link"
+                       href="https://buymeacoffee.com/tsygankov9"
+                       target="_blank"
+                       rel="noopener">☕ Buy me</a>
+                `}
+            </div>
+
+            <debug-console></debug-console>
         `;
     }
 
@@ -219,6 +283,17 @@ export class TarotApp extends LitElement {
 
     private _startNewReading(): void {
         this.navigate('home');
+    }
+
+    private _onToggleDebug(): void {
+        this._debugMode = !this._debugMode;
+        if (!this._debugMode && this._debugConsole?.isOpen) {
+            this._debugConsole.toggle();
+        }
+    }
+
+    private _toggleConsole(): void {
+        this._debugConsole?.toggle();
     }
 }
 
