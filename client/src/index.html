@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Tarot Oracle</title>
+    <link rel="manifest" href="/tarot/manifest.json">
+    <link rel="icon" type="image/x-icon" href="/tarot/icons/favicon.ico">
+    <link rel="apple-touch-icon" href="/tarot/icons/apple-touch-icon-180x180.png">
+    <meta name="theme-color" content="#1a1728">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        :root {
+            --bg: #1a1728;
+            --bg-deep: #110e1c;
+            --bg-card: #231e35;
+            --gold: #c9a84c;
+            --gold-light: #f0d878;
+            --gold-dim: #7a6530;
+            --purple: #6b5fa0;
+            --purple-dim: #3d3560;
+            --purple-light: #9b8fd0;
+            --text: #e8e0d0;
+            --text-dim: #8a7f9a;
+            --text-faint: #4a4460;
+            --border: rgba(201,168,76,0.18);
+            --border-bright: rgba(201,168,76,0.5);
+            --accent: #c8607a;
+            --font-display: 'Palatino Linotype', Palatino, Georgia, serif;
+            --font-body: Georgia, 'Times New Roman', serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: var(--font-body);
+            min-height: 100dvh;
+            overflow-x: hidden;
+        }
+
+        #app {
+            max-width: 480px;
+            margin: 0 auto;
+            min-height: 100dvh;
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <noscript>Tarot Oracle requires JavaScript.</noscript>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+name = "tarot-api"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://a-tsygankov.github.io,http://localhost:3000"
+TTS_MONTHLY_LIMIT = "10000"
+
+# R2 bucket binding
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "tarot"
+
+# Secrets (set via wrangler secret put):
+# GEMINI_KEY
+# ANTHROPIC_KEY
+# ELEVENLABS_KEY
+# ANALYTICS_KEY
+# DEFAULT_VOICE_ID

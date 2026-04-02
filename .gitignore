@@ -1,0 +1,172 @@
+# =========================
+
+# OS / System files
+
+# =========================
+
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# =========================
+
+# Node / Package managers
+
+# =========================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# (optional: keep lock file if you want deterministic builds)
+
+# !package-lock.json
+
+# =========================
+
+# Build outputs (Vite / TS)
+
+# =========================
+
+dist/
+build/
+.out/
+.cache/
+.vite/
+
+# TypeScript
+
+*.tsbuildinfo
+
+# =========================
+
+# Environment / Secrets
+
+# =========================
+
+.env
+.env.*
+!.env.example
+
+# Cloudflare
+
+.wrangler/
+wrangler.toml.local
+
+# =========================
+
+# Logs
+
+# =========================
+
+logs/
+*.log
+
+# =========================
+
+# Temporary / misc
+
+# =========================
+
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# =========================
+
+# IDE / Editor
+
+# =========================
+
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea/
+*.iml
+
+# =========================
+
+# Testing
+
+# =========================
+
+coverage/
+test-results/
+playwright-report/
+
+# =========================
+
+# Generated docs / artifacts
+
+# =========================
+
+docs/generated/
+openapi.json
+openapi.yaml
+
+# =========================
+
+# Local storage / debug
+
+# =========================
+
+local-storage/
+debug/
+*.sqlite
+*.db
+
+# =========================
+
+# R2 / export artifacts (local)
+
+# =========================
+
+r2-exports/
+exports/
+*.jsonl
+*.jsonl.gz
+
+# =========================
+
+# Audio cache (local dev)
+
+# =========================
+
+audio-cache/
+*.mp3
+
+# =========================
+
+# Deployment artifacts
+
+# =========================
+
+deploy/
+.artifacts/
+
+# =========================
+
+# GitHub Pages (if built locally)
+
+# =========================
+
+gh-pages/
+
+# =========================
+
+# Misc
+
+# =========================
+
+*.bak
+*.old
+*.orig
