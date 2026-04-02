@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-04-01"
 
 [vars]
-ALLOWED_ORIGINS = "https://a-tsygankov.github.io,http://localhost:3000"
+ALLOWED_ORIGINS = "https://a-tsygankov.github.io,https://a-tsygankov.github.io/tarot,http://localhost:3000"
 TTS_MONTHLY_LIMIT = "10000"
 
 # R2 bucket binding
