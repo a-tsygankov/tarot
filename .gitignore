@@ -20,13 +20,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# (optional: keep lock file if you want deterministic builds)
-
-# !package-lock.json
+# Keep package-lock.json committed for deterministic CI builds (npm ci)
+# workers/ lock file is not needed in CI — wrangler deploy runs locally
 
 # =========================
 
