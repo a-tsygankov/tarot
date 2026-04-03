@@ -86,17 +86,44 @@ export class UserContext implements IUserContext {
     applyAiUpdate(delta: UserContextDelta | null): void {
         if (!delta) return;
 
-        if (delta.name != null) this.name = delta.name;
-        if (delta.gender != null) this.gender = delta.gender;
-        if (delta.birthdate != null) this.birthdate = delta.birthdate;
-        if (delta.location != null) this.location = delta.location;
+        const changes: string[] = [];
+
+        if (delta.name != null && delta.name !== this.name) {
+            this.name = delta.name;
+            changes.push(`name: ${delta.name}`);
+        }
+        if (delta.gender != null && delta.gender !== this.gender) {
+            this.gender = delta.gender;
+            changes.push(`gender: ${delta.gender}`);
+        }
+        if (delta.birthdate != null && delta.birthdate !== this.birthdate) {
+            this.birthdate = delta.birthdate;
+            changes.push(`birthdate: ${delta.birthdate}`);
+        }
+        if (delta.location != null && delta.location !== this.location) {
+            this.location = delta.location;
+            changes.push(`location: ${delta.location}`);
+        }
 
         if (delta.traits && typeof delta.traits === 'object') {
             for (const [key, value] of Object.entries(delta.traits)) {
                 if (value != null) {
+                    const isNew = !(key in this.traits);
+                    const isChanged = this.traits[key] !== value;
+                    if (isNew || isChanged) {
+                        changes.push(`${key.replace(/_/g, ' ')}: ${value}${isNew ? ' (new)' : ' (updated)'}`);
+                    }
                     this.traits[key] = value;
                 }
             }
+        }
+
+        if (changes.length > 0) {
+            console.log(
+                '%cAI extracted user traits:',
+                'color: #c9a84c; font-weight: bold;',
+                changes.join(' | '),
+            );
         }
 
         this.save();

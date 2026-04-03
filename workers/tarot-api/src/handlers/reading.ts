@@ -59,61 +59,66 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
 
         const responseTime = Date.now() - startTime;
 
-        // ── R2 persistence (fire-and-forget for non-critical writes) ──
-        const now = new Date();
-        const date = now.toISOString().slice(0, 10);
+        // ── R2 persistence (best-effort, non-blocking) ──
+        // Wrapped in try/catch so readings succeed even when R2 is unavailable (e.g. local dev)
+        try {
+            const now = new Date();
+            const date = now.toISOString().slice(0, 10);
 
-        // Create or update game doc with reading
-        const existingGame = await deps.games.getGame(gameContext.gameId);
-        if (!existingGame) {
-            await deps.games.createGame({
+            // Create or update game doc with reading
+            const existingGame = await deps.games.getGame(gameContext.gameId);
+            if (!existingGame) {
+                await deps.games.createGame({
+                    gameId: gameContext.gameId,
+                    uid: userContext.uid,
+                    sessionId: userContext.sessionId,
+                    spreadType: gameContext.spreadType,
+                    cards: gameContext.cards.map(c => ({
+                        position: c.position,
+                        name: c.name,
+                        reversed: c.reversed,
+                    })),
+                    question: gameContext.question,
+                    topic: gameContext.topic,
+                    language: userContext.language,
+                    tone: userContext.tone,
+                });
+            }
+            await deps.games.applyReading(
+                gameContext.gameId,
+                parsed.reading as unknown as Record<string, unknown>,
+                parsed.contextUpdate,
+            );
+
+            // Write turn document
+            await deps.games.writeTurn({
                 gameId: gameContext.gameId,
                 uid: userContext.uid,
-                sessionId: userContext.sessionId,
-                spreadType: gameContext.spreadType,
-                cards: gameContext.cards.map(c => ({
-                    position: c.position,
-                    name: c.name,
-                    reversed: c.reversed,
-                })),
+                turnNumber: gameContext.turnCount + 1,
+                turnType: 'reading',
                 question: gameContext.question,
-                topic: gameContext.topic,
-                language: userContext.language,
-                tone: userContext.tone,
+                questionDigest: null,
+                answerText: aiResult.text,
+                answerDigest: parsed.contextUpdate,
+                userContextDelta: parsed.userContextDelta as unknown as Record<string, unknown>,
+                aiProvider: aiResult.provider,
+                aiModel: aiResult.model,
+                responseTimeMs: responseTime,
+                tokenBudgetUsed: 0,
             });
+
+            // Update user stats + indexes (best-effort)
+            deps.users.incrementStat(userContext.uid, 'totalReadings').catch(() => {});
+            deps.indexWriter.addUserGame(userContext.uid, gameContext.gameId).catch(() => {});
+            deps.indexWriter.addDateGame(date, gameContext.gameId).catch(() => {});
+            deps.indexWriter.trackActiveUser(date, userContext.uid).catch(() => {});
+            deps.analytics.incrementDaily(date, {
+                readings: 1,
+                language: userContext.language,
+            }).catch(() => {});
+        } catch (persistErr) {
+            console.warn('R2 persistence failed (reading still returned):', persistErr instanceof Error ? persistErr.message : String(persistErr));
         }
-        await deps.games.applyReading(
-            gameContext.gameId,
-            parsed.reading as unknown as Record<string, unknown>,
-            parsed.contextUpdate,
-        );
-
-        // Write turn document
-        await deps.games.writeTurn({
-            gameId: gameContext.gameId,
-            uid: userContext.uid,
-            turnNumber: gameContext.turnCount + 1,
-            turnType: 'reading',
-            question: gameContext.question,
-            questionDigest: null,
-            answerText: aiResult.text,
-            answerDigest: parsed.contextUpdate,
-            userContextDelta: parsed.userContextDelta as unknown as Record<string, unknown>,
-            aiProvider: aiResult.provider,
-            aiModel: aiResult.model,
-            responseTimeMs: responseTime,
-            tokenBudgetUsed: 0,
-        });
-
-        // Update user stats + indexes (best-effort)
-        deps.users.incrementStat(userContext.uid, 'totalReadings').catch(() => {});
-        deps.indexWriter.addUserGame(userContext.uid, gameContext.gameId).catch(() => {});
-        deps.indexWriter.addDateGame(date, gameContext.gameId).catch(() => {});
-        deps.indexWriter.trackActiveUser(date, userContext.uid).catch(() => {});
-        deps.analytics.incrementDaily(date, {
-            readings: 1,
-            language: userContext.language,
-        }).catch(() => {});
 
         console.log(`Reading completed in ${responseTime}ms via ${aiResult.provider}/${aiResult.model}`);
 

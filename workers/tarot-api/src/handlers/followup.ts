@@ -66,34 +66,38 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
 
         const responseTime = Date.now() - startTime;
 
-        // ── R2 persistence ──
-        const date = new Date().toISOString().slice(0, 10);
+        // ── R2 persistence (best-effort) ──
+        try {
+            const date = new Date().toISOString().slice(0, 10);
 
-        await deps.games.incrementTurnCount(gameContext.gameId);
+            await deps.games.incrementTurnCount(gameContext.gameId);
 
-        await deps.games.writeTurn({
-            gameId: gameContext.gameId,
-            uid: userContext.uid,
-            turnNumber: gameContext.turnCount + 1,
-            turnType: 'followup',
-            question,
-            questionDigest: parsed.questionDigest,
-            answerText: parsed.answer,
-            answerDigest: parsed.answerDigest,
-            userContextDelta: parsed.userContextDelta as Record<string, unknown> | null,
-            aiProvider: aiResult.provider,
-            aiModel: aiResult.model,
-            responseTimeMs: responseTime,
-            tokenBudgetUsed: 0,
-        });
+            await deps.games.writeTurn({
+                gameId: gameContext.gameId,
+                uid: userContext.uid,
+                turnNumber: gameContext.turnCount + 1,
+                turnType: 'followup',
+                question,
+                questionDigest: parsed.questionDigest,
+                answerText: parsed.answer,
+                answerDigest: parsed.answerDigest,
+                userContextDelta: parsed.userContextDelta as Record<string, unknown> | null,
+                aiProvider: aiResult.provider,
+                aiModel: aiResult.model,
+                responseTimeMs: responseTime,
+                tokenBudgetUsed: 0,
+            });
 
-        // Best-effort analytics
-        deps.users.incrementStat(userContext.uid, 'totalFollowUps').catch(() => {});
-        deps.indexWriter.trackActiveUser(date, userContext.uid).catch(() => {});
-        deps.analytics.incrementDaily(date, {
-            followUps: 1,
-            language: userContext.language,
-        }).catch(() => {});
+            // Best-effort analytics
+            deps.users.incrementStat(userContext.uid, 'totalFollowUps').catch(() => {});
+            deps.indexWriter.trackActiveUser(date, userContext.uid).catch(() => {});
+            deps.analytics.incrementDaily(date, {
+                followUps: 1,
+                language: userContext.language,
+            }).catch(() => {});
+        } catch (persistErr) {
+            console.warn('R2 persistence failed (follow-up still returned):', persistErr instanceof Error ? persistErr.message : String(persistErr));
+        }
 
         console.log(`Follow-up completed in ${responseTime}ms via ${aiResult.provider}/${aiResult.model}`);
 

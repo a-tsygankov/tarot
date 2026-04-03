@@ -273,6 +273,7 @@ export class FollowupChat extends LitElement {
         this._scrollToBottom();
 
         this._loading = true;
+        this.dispatchEvent(new CustomEvent('loading', { detail: true }));
 
         try {
             const response = await this.services.apiService.askFollowUpAsync(
@@ -303,6 +304,7 @@ export class FollowupChat extends LitElement {
             }];
         } finally {
             this._loading = false;
+            this.dispatchEvent(new CustomEvent('loading', { detail: false }));
             this._scrollToBottom();
         }
     }
