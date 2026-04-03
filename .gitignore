@@ -56,6 +56,7 @@ build/
 
 .wrangler/
 wrangler.toml.local
+.dev.vars
 
 # =========================
 

@@ -33,7 +33,6 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
         checkLocalStorage(),
         checkTts(ttsService),
         checkStt(sttService),
-        checkServiceWorker(),
     ]);
 
     console.group('Health checks');
@@ -120,18 +119,3 @@ async function checkStt(stt: { isAvailable(): boolean }): Promise<HealthCheck> {
     };
 }
 
-async function checkServiceWorker(): Promise<HealthCheck> {
-    if (!('serviceWorker' in navigator)) {
-        return { name: 'Service Worker', status: 'warn', detail: 'not supported' };
-    }
-    try {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg) {
-            const state = reg.active ? 'active' : reg.waiting ? 'waiting' : 'installing';
-            return { name: 'Service Worker', status: 'ok', detail: state };
-        }
-        return { name: 'Service Worker', status: 'warn', detail: 'not registered' };
-    } catch {
-        return { name: 'Service Worker', status: 'warn', detail: 'check failed' };
-    }
-}

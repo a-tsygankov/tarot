@@ -13,9 +13,13 @@ import './ui/components/tarot-app.js';
 async function init() {
     const bootStart = performance.now();
 
-    // Restore user's theme and deck style before first paint
+    // Restore user's preferences before first paint
     restoreTheme();
     await initDeckStyle();
+
+    // Restore italic preference
+    const italic = localStorage.getItem('tarot-italic') ?? 'true';
+    document.documentElement.style.setProperty('--font-reading-style', italic === 'true' ? 'italic' : 'normal');
 
     const services = createAppServices();
 

@@ -237,6 +237,7 @@ export class SettingsPanel extends LitElement {
     @state() private _speed = 1.0;
     @state() private _font = 'Palatino';
     @state() private _deckStyle = 'classic';
+    @state() private _italic = true;
 
     override connectedCallback(): void {
         super.connectedCallback();
@@ -249,6 +250,7 @@ export class SettingsPanel extends LitElement {
             this._speed = parseFloat(localStorage.getItem('tarot-tts-speed') ?? '1.0');
             this._font = localStorage.getItem('tarot-font') ?? 'Palatino';
             this._deckStyle = getCurrentDeckStyle();
+            this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
             // Determine voice from voiceId
             const lang = this.services.config.languages.find(l => l.code === this._language);
             if (lang?.voiceId) {
@@ -367,9 +369,15 @@ export class SettingsPanel extends LitElement {
                             </div>
                         `)}
                     </div>
+                    <div class="option-grid" style="margin-top: 0.5em;">
+                        <button
+                            class="option-btn ${this._italic ? 'selected' : ''}"
+                            @click=${() => this._setItalic(!this._italic)}
+                        ><em>Italic</em></button>
+                    </div>
                     <div class="font-preview">
                         <div class="font-preview-label">preview:</div>
-                        <div class="font-preview-text" style="font-family: ${this._currentFontFamily}">
+                        <div class="font-preview-text" style="font-family: ${this._currentFontFamily}; font-style: ${this._italic ? 'italic' : 'normal'}">
                             The cards whisper of change and transformation…
                         </div>
                     </div>
@@ -456,6 +464,12 @@ export class SettingsPanel extends LitElement {
         if (font) {
             document.documentElement.style.setProperty('--font-reading', font.family);
         }
+    }
+
+    private _setItalic(italic: boolean): void {
+        this._italic = italic;
+        localStorage.setItem('tarot-italic', String(italic));
+        document.documentElement.style.setProperty('--font-reading-style', italic ? 'italic' : 'normal');
     }
 
     private async _setDeckStyle(styleId: string): Promise<void> {
