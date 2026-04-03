@@ -119,9 +119,10 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
 
         return Response.json(parsed);
     } catch (err) {
-        console.error('Reading handler error:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('Reading handler error:', message);
         return Response.json(
-            { error: 'Reading failed', message: String(err) },
+            { error: 'Reading failed', message },
             { status: 500 },
         );
     }

@@ -35,8 +35,9 @@ export class CompatibilityService {
             }
 
             return { status: 'ok', serverVersion: server };
-        } catch {
-            return { status: 'error', message: 'Could not reach server' };
+        } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            return { status: 'error', message: `Could not reach server: ${detail}` };
         }
     }
 

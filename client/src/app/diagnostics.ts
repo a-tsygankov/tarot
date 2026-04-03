@@ -58,7 +58,7 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.group('Preferences');
     console.log(`Theme: ${localStorage.getItem('tarot-theme') ?? 'dusk'}`);
     console.log(`Deck: ${getCurrentDeckStyle()}`);
-    console.log(`Font: ${localStorage.getItem('tarot-font') ?? 'Palatino'}`);
+    console.log(`Font: ${localStorage.getItem('tarot-font') ?? 'Palatino'}${(localStorage.getItem('tarot-italic') ?? 'true') === 'true' ? ' (italic)' : ''}`);
     console.log(`TTS speed: ${localStorage.getItem('tarot-tts-speed') ?? '1.0'}×`);
     console.log(`Voice ID: ${userContext.voiceId ?? 'off'}`);
     console.groupEnd();
@@ -82,7 +82,7 @@ async function checkApi(services: AppServices): Promise<HealthCheck> {
         } else if (result.status === 'incompatible') {
             return { name: 'API', status: 'fail', detail: `incompatible: ${result.message}`, durationMs: ms };
         } else {
-            return { name: 'API', status: 'warn', detail: `check returned: ${result.status}`, durationMs: ms };
+            return { name: 'API', status: 'warn', detail: `${result.status}: ${result.message ?? 'unknown'}`, durationMs: ms };
         }
     } catch (err) {
         const ms = Math.round(performance.now() - t0);

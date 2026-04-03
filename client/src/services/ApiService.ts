@@ -130,7 +130,7 @@ export class ApiService implements IApiService {
 
     async checkVersionAsync(): Promise<VersionResponse> {
         const response = await fetch(this.config.apiBase + '/api/meta/version');
-        if (!response.ok) throw new Error('Version check failed');
+        if (!response.ok) throw new Error(`Version check failed: HTTP ${response.status}`);
         return response.json();
     }
 
@@ -143,7 +143,17 @@ export class ApiService implements IApiService {
     ): Promise<T> {
         const response = await this.postRaw(endpoint, body, options);
         if (!response.ok) {
-            throw new Error(`API error ${response.status} at ${endpoint}`);
+            // Try to extract error detail from response body
+            let detail = '';
+            try {
+                const errBody = await response.json() as { message?: string; error?: string };
+                detail = errBody.message || errBody.error || '';
+            } catch { /* response may not be JSON */ }
+            throw new Error(
+                detail
+                    ? `${endpoint} ${response.status}: ${detail}`
+                    : `API error ${response.status} at ${endpoint}`,
+            );
         }
         return response.json();
     }
