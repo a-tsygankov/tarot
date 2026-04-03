@@ -50,14 +50,14 @@ export function parseFollowUpResponse(raw: string): FollowUpResponse {
 function extractJson(raw: string): string {
     const trimmed = raw.trim();
 
-    // Try raw JSON first
-    if (trimmed.startsWith('{')) return trimmed;
-
-    // Try markdown-fenced JSON
+    // Try markdown-fenced JSON first (most reliable boundary)
     const fencedMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
     if (fencedMatch) return fencedMatch[1].trim();
 
-    // Last resort: find first { to last }
+    // Extract from first { to matching last } — handles:
+    // - Clean JSON: {"reading": ...}
+    // - JSON with trailing text: {"reading": ...}\n\nHere is your reading...
+    // - Prefixed text: Here is the reading:\n{"reading": ...}
     const start = trimmed.indexOf('{');
     const end = trimmed.lastIndexOf('}');
     if (start !== -1 && end > start) {
