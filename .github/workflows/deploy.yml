@@ -6,7 +6,10 @@ on:
     paths:
       - 'client/**'
       - 'shared/**'
+      - 'workers/**'
   workflow_dispatch:
+
+# ── Client (GitHub Pages) ──────────────────────────────────────────
 
 permissions:
   contents: read
@@ -18,7 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  # ── Deploy client to GitHub Pages ──
+  deploy-client:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -61,3 +65,34 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # ── Deploy worker to Cloudflare ──
+  deploy-worker:
+    runs-on: ubuntu-latest
+    # Only run if secrets are configured
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' || true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: workers/tarot-api/package-lock.json
+
+      - name: Install dependencies
+        working-directory: workers/tarot-api
+        run: npm ci
+
+      - name: Type check
+        working-directory: workers/tarot-api
+        run: npx tsc --noEmit
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: workers/tarot-api
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
