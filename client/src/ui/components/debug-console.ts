@@ -145,6 +145,9 @@ export class DebugConsole extends LitElement {
     private _origWarn?: typeof console.warn;
     private _origError?: typeof console.error;
     private _origInfo?: typeof console.info;
+    private _origGroup?: typeof console.group;
+    private _origGroupEnd?: typeof console.groupEnd;
+    private _intercepted = false;
 
     override connectedCallback(): void {
         super.connectedCallback();
@@ -204,10 +207,23 @@ export class DebugConsole extends LitElement {
     }
 
     private _interceptConsole(): void {
+        if (this._intercepted) return;
+
+        // Global guard: if another instance already wrapped console, restore first
+        const w = window as unknown as Record<string, unknown>;
+        const prev = w.__debugConsoleInstance as DebugConsole | undefined;
+        if (prev && prev !== this) {
+            prev._restoreConsole();
+        }
+        w.__debugConsoleInstance = this;
+        this._intercepted = true;
+
         this._origLog = console.log;
         this._origWarn = console.warn;
         this._origError = console.error;
         this._origInfo = console.info;
+        this._origGroup = console.group;
+        this._origGroupEnd = console.groupEnd;
 
         const capture = (level: LogEntry['level'], orig: (...args: unknown[]) => void) => {
             return (...args: unknown[]) => {
@@ -220,13 +236,33 @@ export class DebugConsole extends LitElement {
         console.warn = capture('warn', this._origWarn);
         console.error = capture('error', this._origError);
         console.info = capture('info', this._origInfo);
+
+        // Intercept group/groupEnd as styled log entries
+        console.group = (...args: unknown[]) => {
+            this._origGroup!.apply(console, args);
+            this._addEntry('info', ['▸ ' + args.map(String).join(' ')]);
+        };
+        console.groupEnd = () => {
+            this._origGroupEnd!.apply(console);
+            // no visible entry for groupEnd
+        };
     }
 
     private _restoreConsole(): void {
+        if (!this._intercepted) return;
+        this._intercepted = false;
+
         if (this._origLog) console.log = this._origLog;
         if (this._origWarn) console.warn = this._origWarn;
         if (this._origError) console.error = this._origError;
         if (this._origInfo) console.info = this._origInfo;
+        if (this._origGroup) console.group = this._origGroup;
+        if (this._origGroupEnd) console.groupEnd = this._origGroupEnd;
+
+        const w = window as unknown as Record<string, unknown>;
+        if (w.__debugConsoleInstance === this) {
+            delete w.__debugConsoleInstance;
+        }
     }
 
     private _addEntry(level: LogEntry['level'], args: unknown[]): void {

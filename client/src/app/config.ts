@@ -16,7 +16,7 @@ export interface ThemeConfig {
 }
 
 export const CONFIG = {
-    apiBase: 'https://tarot-api.tarotoracle.workers.dev',
+    apiBase: import.meta.env.DEV ? '' : 'https://tarot-api.tarotoracle.workers.dev',
 
     languages: [
         { code: 'ENG', label: 'English',    sttLang: 'en-US', voiceId: 'MKlLqCItoCkvdhrxgtLv' },

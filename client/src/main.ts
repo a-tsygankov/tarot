@@ -36,4 +36,8 @@ async function init() {
     await runDiagnostics(services, bootStart);
 }
 
-init().catch(console.error);
+// Guard against HMR re-execution
+if (!(window as unknown as Record<string, boolean>).__tarotInitialized) {
+    (window as unknown as Record<string, boolean>).__tarotInitialized = true;
+    init().catch(console.error);
+}
