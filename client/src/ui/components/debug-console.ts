@@ -270,7 +270,11 @@ export class DebugConsole extends LitElement {
         const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
         const msg = args.map(a => {
             if (typeof a === 'string') return a;
-            try { return JSON.stringify(a); } catch { return String(a); }
+            if (a instanceof Error) return `${a.name}: ${a.message}`;
+            try {
+                const json = JSON.stringify(a);
+                return json === '{}' ? String(a) : json;
+            } catch { return String(a); }
         }).join(' ');
 
         const entry: LogEntry = { time, msg, level };

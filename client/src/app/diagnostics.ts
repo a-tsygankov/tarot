@@ -4,6 +4,7 @@
  */
 
 import type { AppServices } from './composition-root.js';
+import type { VersionResponse } from '@shared/contracts/api-contracts.js';
 import { getCurrentDeckStyle } from '../ui/components/card-art-registry.js';
 
 interface HealthCheck {
@@ -11,6 +12,7 @@ interface HealthCheck {
     status: 'ok' | 'warn' | 'fail';
     detail: string;
     durationMs?: number;
+    serverVersion?: VersionResponse;
 }
 
 /**
@@ -21,19 +23,21 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     const { config, userContext, sttService, ttsService } = services;
 
     // ── Banner ──
+    const buildTime = import.meta.env.VITE_BUILD_TIME ?? 'dev';
     console.log(
         '%c✦ Tarot Oracle v' + config.version + ' ✦',
         'color: #c9a84c; font-size: 14px; font-weight: bold; text-shadow: 0 0 8px rgba(201,168,76,0.4);'
     );
-    console.log(`API target: ${config.apiBase} (api v${config.apiVersion})`);
+    console.log(`Client: v${config.version} (build: ${buildTime}) | API target: ${config.apiBase || 'local proxy'} (api v${config.apiVersion})`);
 
     // ── Health checks (run in parallel) ──
-    const checks = await Promise.all([
+    const [apiCheck, ...otherChecks] = await Promise.all([
         checkApi(services),
         checkLocalStorage(),
         checkTts(ttsService),
         checkStt(sttService),
     ]);
+    const checks = [apiCheck, ...otherChecks];
 
     console.group('Health checks');
     for (const c of checks) {
@@ -41,6 +45,10 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
         const timing = c.durationMs != null ? ` (${c.durationMs}ms)` : '';
         const method = c.status === 'fail' ? 'warn' : 'log';
         console[method](`${icon} ${c.name}: ${c.detail}${timing}`);
+    }
+    // Show worker version if API check succeeded
+    if (apiCheck.serverVersion) {
+        console.log(`Worker: v${apiCheck.serverVersion.worker.version} | Schema: ${apiCheck.serverVersion.schema.current}`);
     }
     console.groupEnd();
 
@@ -75,12 +83,13 @@ async function checkApi(services: AppServices): Promise<HealthCheck> {
     try {
         const result = await services.compatibilityService.checkAsync();
         const ms = Math.round(performance.now() - t0);
+        const sv = result.serverVersion;
         if (result.status === 'ok') {
-            return { name: 'API', status: 'ok', detail: `reachable, compatible`, durationMs: ms };
+            return { name: 'API', status: 'ok', detail: 'reachable, compatible', durationMs: ms, serverVersion: sv };
         } else if (result.status === 'update_available') {
-            return { name: 'API', status: 'warn', detail: `update available: ${result.message}`, durationMs: ms };
+            return { name: 'API', status: 'warn', detail: `update available: ${result.message}`, durationMs: ms, serverVersion: sv };
         } else if (result.status === 'incompatible') {
-            return { name: 'API', status: 'fail', detail: `incompatible: ${result.message}`, durationMs: ms };
+            return { name: 'API', status: 'fail', detail: `incompatible: ${result.message}`, durationMs: ms, serverVersion: sv };
         } else {
             return { name: 'API', status: 'warn', detail: `${result.status}: ${result.message ?? 'unknown'}`, durationMs: ms };
         }

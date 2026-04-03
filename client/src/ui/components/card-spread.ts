@@ -360,8 +360,11 @@ export class CardSpread extends LitElement {
 
             this.dispatchEvent(new CustomEvent('reading-ready'));
         } catch (err) {
-            console.error('Reading failed:', err);
-            this._progressText = `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+            const msg = err instanceof Error ? err.message : String(err);
+            const stack = err instanceof Error ? err.stack : '';
+            console.error(`Reading failed: ${msg}`);
+            if (stack) console.error('Stack:', stack);
+            this._progressText = `Error: ${msg}`;
         } finally {
             this._loading = false;
             this.dispatchEvent(new CustomEvent('loading', { detail: false }));

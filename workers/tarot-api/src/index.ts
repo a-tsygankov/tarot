@@ -29,7 +29,7 @@ export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         // Handle CORS preflight
         if (request.method === 'OPTIONS') {
-            return corsResponse(env, new Response(null, { status: 204 }));
+            return corsResponse(env, new Response(null, { status: 204 }), request);
         }
 
         const url = new URL(request.url);
@@ -60,14 +60,14 @@ export default {
                 maxRequests: WORKER_CONFIG.rateLimit.readingsPerHour,
                 windowMs: 3_600_000,
             });
-            if (!rl.allowed) return corsResponse(env, rateLimitResponse(rl));
+            if (!rl.allowed) return corsResponse(env, rateLimitResponse(rl), request);
         }
         if (path === '/api/event') {
             const rl = checkRateLimit(`event:${clientIp}`, {
                 maxRequests: WORKER_CONFIG.rateLimit.eventsPerMinute,
                 windowMs: 60_000,
             });
-            if (!rl.allowed) return corsResponse(env, rateLimitResponse(rl));
+            if (!rl.allowed) return corsResponse(env, rateLimitResponse(rl), request);
         }
 
         try {
@@ -115,15 +115,28 @@ export default {
             );
         }
 
-        return corsResponse(env, response);
+        return corsResponse(env, response, request);
     },
 } satisfies ExportedHandler<Env>;
 
 // ── CORS helpers ────────────────────────────────────────────────────
 
-function corsResponse(env: Env, response: Response): Response {
+function corsResponse(env: Env, response: Response, request?: Request): Response {
     const headers = new Headers(response.headers);
-    headers.set('Access-Control-Allow-Origin', env.ALLOWED_ORIGINS);
+
+    // CORS spec requires a single origin in Access-Control-Allow-Origin.
+    // Match the request's Origin against the allowed list and reflect it back.
+    const origin = request?.headers.get('Origin');
+    const allowed = env.ALLOWED_ORIGINS.split(',').map(s => s.trim());
+    if (origin && allowed.includes(origin)) {
+        headers.set('Access-Control-Allow-Origin', origin);
+        headers.set('Vary', 'Origin');
+    } else if (!origin) {
+        // Non-browser request — allow with wildcard
+        headers.set('Access-Control-Allow-Origin', '*');
+    }
+    // If origin is present but not allowed, no ACAO header → browser blocks
+
     headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Key');
     headers.set('Access-Control-Max-Age', '86400');

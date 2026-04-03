@@ -3,6 +3,9 @@ import { resolve } from 'path';
 
 export default defineConfig({
     base: '/tarot/',
+    define: {
+        'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
+    },
     resolve: {
         alias: {
             '@shared': resolve(__dirname, '../shared'),
