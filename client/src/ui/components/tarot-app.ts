@@ -13,9 +13,10 @@ import './settings-panel.js';
 import './voice-mode.js';
 import './debug-console.js';
 import './star-background.js';
+import './dashboard-panel.js';
 import type { DebugConsole } from './debug-console.js';
 
-export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'settings' | 'voice';
+export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'settings' | 'voice' | 'dashboard';
 
 /**
  * Root application shell — manages screen navigation and services.
@@ -179,6 +180,27 @@ export class TarotApp extends LitElement {
                 border-color: var(--gold-dim);
                 color: var(--gold);
             }
+
+            /* Loading spinner in bottom bar center */
+            .bar-spinner {
+                display: flex;
+                gap: 4px;
+                color: var(--gold);
+                font-size: 0.85em;
+            }
+
+            .bar-spinner-star {
+                animation: bar-star-fade 1.4s ease-in-out infinite;
+            }
+
+            .bar-spinner-star:nth-child(1) { animation-delay: 0s; }
+            .bar-spinner-star:nth-child(2) { animation-delay: 0.2s; }
+            .bar-spinner-star:nth-child(3) { animation-delay: 0.4s; }
+
+            @keyframes bar-star-fade {
+                0%, 100% { opacity: 0.2; transform: scale(0.8); }
+                50% { opacity: 1; transform: scale(1.3); text-shadow: 0 0 8px rgba(201, 168, 76, 0.5); }
+            }
         `,
     ];
 
@@ -186,6 +208,7 @@ export class TarotApp extends LitElement {
 
     @state() private _screen: AppScreen = 'home';
     @state() private _debugMode = false;
+    @state() private _isLoading = false;
 
     @query('debug-console') private _debugConsole!: DebugConsole;
 
@@ -220,10 +243,16 @@ export class TarotApp extends LitElement {
                     ` : ''}
                 </div>
                 <div class="bar-center">
-                    <div class="bar-logo" @click=${this._onLogoTap}>✦ Tarot</div>
+                    ${this._isLoading
+                        ? html`<div class="bar-spinner"><span class="bar-spinner-star">&#10022;</span><span class="bar-spinner-star">&#10022;</span><span class="bar-spinner-star">&#10022;</span></div>`
+                        : html`<div class="bar-logo" @click=${this._onLogoTap}>&#10022; Tarot</div>`
+                    }
                 </div>
                 <div class="bar-right">
                     ${this._debugMode ? html`
+                        <button class="console-toggle" @click=${() => this.navigate('dashboard')}>
+                            Dash
+                        </button>
                         <button class="console-toggle" @click=${this._toggleConsole}>
                             Console
                         </button>
@@ -251,6 +280,7 @@ export class TarotApp extends LitElement {
                     <card-spread
                         .services=${this._services}
                         @reading-ready=${this._onReadingReady}
+                        @loading=${(e: CustomEvent) => { this._isLoading = e.detail; }}
                     ></card-spread>
                 `;
             case 'reading':
@@ -267,6 +297,7 @@ export class TarotApp extends LitElement {
                     <followup-chat
                         .services=${this._services}
                         @back=${() => this.navigate('reading')}
+                        @loading=${(e: CustomEvent) => { this._isLoading = e.detail; }}
                     ></followup-chat>
                 `;
             case 'settings':
@@ -282,6 +313,13 @@ export class TarotApp extends LitElement {
                         .services=${this._services}
                         @exit-voice=${() => this.navigate('reading')}
                     ></voice-mode>
+                `;
+            case 'dashboard':
+                return html`
+                    <dashboard-panel
+                        .services=${this._services}
+                        @close=${() => this.navigate('home')}
+                    ></dashboard-panel>
                 `;
         }
     }

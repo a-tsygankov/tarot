@@ -58,8 +58,22 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.log(`Session: ${userContext.sessionId}`);
     console.log(`Language: ${userContext.language} | Tone: ${userContext.tone}`);
     if (userContext.name) console.log(`Name: ${userContext.name}`);
+    if (userContext.gender) console.log(`Gender: ${userContext.gender}`);
+    if (userContext.birthdate) console.log(`Birthdate: ${userContext.birthdate}`);
+    if (userContext.location) console.log(`Location: ${userContext.location}`);
     console.log(`Total readings: ${userContext.totalReadings}`);
     console.log(`Device: ${userContext.deviceInfo?.platform ?? 'unknown'} | ${userContext.deviceInfo?.screenWidth}×${userContext.deviceInfo?.screenHeight}`);
+    // Show accumulated traits
+    const traitEntries = Object.entries(userContext.traits);
+    if (traitEntries.length > 0) {
+        console.group('Known traits');
+        for (const [key, value] of traitEntries) {
+            console.log(`${key.replace(/_/g, ' ')}: ${value}`);
+        }
+        console.groupEnd();
+    } else {
+        console.log('Traits: none yet (model extracts from your questions)');
+    }
     console.groupEnd();
 
     // ── Preferences ──

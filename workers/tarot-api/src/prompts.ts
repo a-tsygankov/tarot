@@ -26,12 +26,19 @@ IMPORTANT: Return your response as JSON with exactly these fields:
       Extract things like: zodiac_sign, relationship_status, partner_name,
       sexuality, occupation, interests, fears, goals, children, pets,
       health_conditions, spiritual_beliefs, age, nationality,
+      education, hobbies, living_situation, family_status,
       or ANY other personal fact. Use snake_case keys.
       Only include facts the seeker explicitly stated — never infer or assume.
       Return empty object {} if no new personal details were shared.
     }
   }
 }
+
+LENGTH CONSTRAINTS — strictly follow these:
+- Each card's "reading" field: 3-5 sentences maximum. Be vivid but concise.
+- The "overall" synthesis: 5-8 sentences maximum. Weave themes together with actionable advice.
+- Do NOT pad with filler or restate what was already said per card.
+
 Return ONLY valid JSON. No markdown fencing, no extra text.`,
 
     systemFollowUp: `You are continuing a Tarot reading conversation as a wise oracle. You have the context of the original reading and the conversation so far. Answer the seeker's follow-up question with the same depth and style as the original reading. Draw on the cards already laid out.`,
@@ -51,6 +58,9 @@ Return your response as JSON with exactly these fields:
   }
 }
 CRITICAL: questionDigest and answerDigest must be SHORT. They are compressed memory for future turns, not displayed to the user. Capture the essence, not the detail.
+
+LENGTH CONSTRAINT: Keep "answer" to 5-8 sentences. Be insightful but concise.
+
 Return ONLY valid JSON. No markdown fencing, no extra text.`,
 
     tones: {

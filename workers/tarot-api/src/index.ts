@@ -6,6 +6,7 @@ import { handleSession } from './handlers/session.js';
 import { handleEvent } from './handlers/event.js';
 import { handleVersion } from './handlers/version.js';
 import { handleExport } from './handlers/admin-export.js';
+import { handleDashboard } from './handlers/admin-dashboard.js';
 import {
     handleSchemaActivate,
     handleSchemaRollback,
@@ -87,6 +88,13 @@ export default {
             } else if (path === '/api/health' && request.method === 'GET') {
                 response = Response.json({ status: 'ok' });
             // ── Admin routes (X-Admin-Key protected) ──
+            } else if (path === '/api/admin/auth' && request.method === 'POST') {
+                const authKey = request.headers.get('X-Admin-Key');
+                response = authKey === env.ANALYTICS_KEY
+                    ? Response.json({ valid: true })
+                    : Response.json({ valid: false, error: 'Invalid admin key' }, { status: 401 });
+            } else if (path === '/api/admin/dashboard' && request.method === 'GET') {
+                response = await handleDashboard(request, env);
             } else if (path === '/api/admin/export' && request.method === 'GET') {
                 response = await handleExport(request, env);
             } else if (path === '/api/admin/schema/activate' && request.method === 'POST') {
@@ -108,9 +116,10 @@ export default {
                 );
             }
         } catch (err) {
-            console.error('Unhandled error:', err);
+            const message = err instanceof Error ? err.message : String(err);
+            console.error('Unhandled error:', message);
             response = Response.json(
-                { error: 'Internal server error' },
+                { error: 'Internal server error', message },
                 { status: 500 },
             );
         }
