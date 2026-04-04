@@ -85,6 +85,10 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.log(`Voice ID: ${userContext.voiceId ?? 'off'}`);
     console.groupEnd();
 
+    // ── Geo (passive) ──
+    const geo = services.geoService;
+    console.log(`Geo (passive): ${geo.toSummary()}`);
+
     // ── Boot timing ──
     const bootMs = Math.round(performance.now() - bootStartMs);
     console.log(`Boot completed in ${bootMs}ms`);

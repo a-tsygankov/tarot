@@ -30,6 +30,7 @@ export class R2GameRepository {
         topic: string | null;
         language: string;
         tone: string;
+        location?: { country: string | null; city: string | null; timezone: string | null };
     }): Promise<GameDocument> {
         const doc: GameDocument = {
             type: 'game',
@@ -47,6 +48,7 @@ export class R2GameRepository {
             reading: {},
             readingDigest: null,
             turnCount: 0,
+            ...(params.location ? { location: params.location } : {}),
         };
         await r2PutJson(this.r2, this.gameKey(params.gameId), doc);
         return doc;

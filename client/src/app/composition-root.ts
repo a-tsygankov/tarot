@@ -7,6 +7,7 @@ import { ElevenLabsTtsService } from '../services/Tts/ElevenLabsTtsService.js';
 import { BrowserTtsService } from '../services/Tts/BrowserTtsService.js';
 import { FallbackTtsService } from '../services/Tts/FallbackTtsService.js';
 import { CompatibilityService } from '../services/Versioning/CompatibilityService.js';
+import { GeoService } from '../services/GeoService.js';
 import type { ITtsService } from '../services/Tts/ITtsService.js';
 import type { ISttService } from '../services/Stt/ISttService.js';
 import type { IApiService } from '../services/IApiService.js';
@@ -23,6 +24,7 @@ export interface AppServices {
     ttsService: ITtsService;
     sttService: ISttService;
     compatibilityService: CompatibilityService;
+    geoService: GeoService;
 }
 
 export function createAppServices(): AppServices {
@@ -48,6 +50,9 @@ export function createAppServices(): AppServices {
     // Versioning
     const compatibilityService = new CompatibilityService(apiService, CONFIG.version);
 
+    // Geo (passive, no permission needed)
+    const geoService = new GeoService();
+
     return {
         config: CONFIG,
         userContext,
@@ -56,5 +61,6 @@ export function createAppServices(): AppServices {
         ttsService,
         sttService,
         compatibilityService,
+        geoService,
     };
 }

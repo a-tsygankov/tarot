@@ -59,6 +59,14 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
 
         const responseTime = Date.now() - startTime;
 
+        // Extract geo from Cloudflare headers (available on every request)
+        const cfData = (request as unknown as { cf?: Record<string, unknown> }).cf;
+        const geo = {
+            country: request.headers.get('cf-ipcountry') ?? null,
+            city: (cfData?.city as string) ?? null,
+            timezone: (cfData?.timezone as string) ?? null,
+        };
+
         // ── R2 persistence (best-effort, non-blocking) ──
         // Wrapped in try/catch so readings succeed even when R2 is unavailable (e.g. local dev)
         try {
@@ -82,6 +90,7 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                     topic: gameContext.topic,
                     language: userContext.language,
                     tone: userContext.tone,
+                    location: geo,
                 });
             }
             await deps.games.applyReading(
