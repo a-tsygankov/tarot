@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
@@ -181,25 +181,39 @@ export class TarotApp extends LitElement {
                 color: var(--gold);
             }
 
-            /* Loading spinner in bottom bar center */
-            .bar-spinner {
-                display: flex;
-                gap: 4px;
-                color: var(--gold);
-                font-size: 0.85em;
+            /* Loading stars in bottom bar */
+            .bar-star-main {
+                display: inline-block;
+                animation: star-spin 1.8s ease-in-out infinite;
             }
 
-            .bar-spinner-star {
-                animation: bar-star-fade 1.4s ease-in-out infinite;
+            .bar-star-sm {
+                font-size: 0.6em;
+                display: inline-block;
+                vertical-align: middle;
+                opacity: 0.7;
             }
 
-            .bar-spinner-star:nth-child(1) { animation-delay: 0s; }
-            .bar-spinner-star:nth-child(2) { animation-delay: 0.2s; }
-            .bar-spinner-star:nth-child(3) { animation-delay: 0.4s; }
+            .bar-star-1 {
+                animation: star-spin-reverse 1.4s ease-in-out infinite;
+                margin-right: 0.15em;
+            }
 
-            @keyframes bar-star-fade {
-                0%, 100% { opacity: 0.2; transform: scale(0.8); }
-                50% { opacity: 1; transform: scale(1.3); text-shadow: 0 0 8px rgba(201, 168, 76, 0.5); }
+            .bar-star-2 {
+                animation: star-spin 1.4s ease-in-out infinite 0.3s;
+                margin-left: 0.3em;
+            }
+
+            @keyframes star-spin {
+                0% { transform: rotate(0deg) scale(1); opacity: 0.6; }
+                50% { transform: rotate(180deg) scale(1.2); opacity: 1; text-shadow: 0 0 8px rgba(201, 168, 76, 0.6); }
+                100% { transform: rotate(360deg) scale(1); opacity: 0.6; }
+            }
+
+            @keyframes star-spin-reverse {
+                0% { transform: rotate(0deg) scale(1); opacity: 0.5; }
+                50% { transform: rotate(-180deg) scale(1.3); opacity: 1; text-shadow: 0 0 8px rgba(201, 168, 76, 0.5); }
+                100% { transform: rotate(-360deg) scale(1); opacity: 0.5; }
             }
         `,
     ];
@@ -243,10 +257,12 @@ export class TarotApp extends LitElement {
                     ` : ''}
                 </div>
                 <div class="bar-center">
-                    ${this._isLoading
-                        ? html`<div class="bar-spinner"><span class="bar-spinner-star">&#10022;</span><span class="bar-spinner-star">&#10022;</span><span class="bar-spinner-star">&#10022;</span></div>`
-                        : html`<div class="bar-logo" @click=${this._onLogoTap}>&#10022; Tarot</div>`
-                    }
+                    <div class="bar-logo" @click=${this._onLogoTap}>
+                        ${this._isLoading ? html`<span class="bar-star bar-star-sm bar-star-1">&#10022;</span>` : nothing}
+                        <span class="bar-star ${this._isLoading ? 'bar-star-main' : ''}">&#10022;</span>
+                        Tarot
+                        ${this._isLoading ? html`<span class="bar-star bar-star-sm bar-star-2">&#10022;</span>` : nothing}
+                    </div>
                 </div>
                 <div class="bar-right">
                     ${this._debugMode ? html`

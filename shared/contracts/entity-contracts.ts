@@ -72,6 +72,12 @@ export interface GameDocument extends BaseDocument {
     reading: Record<string, unknown>;
     readingDigest: string | null;
     turnCount: number;
+    /** Approximate location from Cloudflare geo headers at time of reading. */
+    location?: {
+        country: string | null;
+        city: string | null;
+        timezone: string | null;
+    };
 }
 
 // ── Turn ─────────────────────────────────────────────────────────────

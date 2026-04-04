@@ -43,6 +43,72 @@ interface DashboardData {
     workerVersion: string;
 }
 
+interface UserDetailData {
+    user: {
+        uid: string;
+        name: string | null;
+        gender: string | null;
+        birthdate: string | null;
+        traits: Record<string, string>;
+        stats: { totalReadings: number; totalFollowUps: number };
+        preferences: { language: string; tone: string };
+        locations: { lastCountry: string | null; lastCity: string | null };
+        firstSeenAt: string;
+        lastSeenAt: string;
+    };
+    games: Array<{
+        gameId: string;
+        spreadType: number;
+        question: string | null;
+        topic: string | null;
+        language: string;
+        tone: string;
+        turnCount: number;
+        createdAt: string;
+        location: { country: string | null; city: string | null; timezone: string | null } | null;
+    }>;
+    locations: Array<{
+        country: string | null;
+        city: string | null;
+        timezone: string | null;
+        lastSeen: string;
+    }>;
+    totalGames: number;
+}
+
+interface GameDetailData {
+    game: {
+        gameId: string;
+        uid: string;
+        spreadType: number;
+        cards: Array<{ position: string; name: string; reversed: boolean }>;
+        question: string | null;
+        topic: string | null;
+        language: string;
+        tone: string;
+        reading: Record<string, unknown>;
+        readingDigest: string | null;
+        turnCount: number;
+        createdAt: string;
+        location?: { country: string | null; city: string | null; timezone: string | null };
+    };
+    turns: Array<{
+        turnNumber: number;
+        turnType: 'reading' | 'followup';
+        question: string | null;
+        questionDigest: string | null;
+        answerText: string;
+        answerDigest: string;
+        userContextDelta: Record<string, unknown> | null;
+        aiProvider: string;
+        aiModel: string;
+        responseTimeMs: number;
+        createdAt: string;
+    }>;
+}
+
+type DashView = 'overview' | 'user' | 'game';
+
 /**
  * Admin dashboard — analytics overview, accessible from debug mode.
  */
@@ -366,6 +432,157 @@ export class DashboardPanel extends LitElement {
                 height: 8px;
                 border-radius: 2px;
             }
+
+            /* ── Drill-down links ── */
+            .drill-link {
+                color: var(--gold);
+                cursor: pointer;
+                text-decoration: none;
+                transition: opacity 0.2s;
+            }
+
+            .drill-link:hover {
+                opacity: 0.7;
+                text-decoration: underline;
+            }
+
+            .breadcrumb {
+                display: flex;
+                align-items: center;
+                gap: 0.4em;
+                margin-bottom: 1em;
+                font-size: 0.85em;
+                color: var(--text-dim);
+            }
+
+            .breadcrumb .sep { color: var(--text-faint); }
+
+            /* ── Detail view ── */
+            .detail-section {
+                margin-bottom: 1.5em;
+            }
+
+            .detail-grid {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.3em 1em;
+                font-size: 0.85em;
+            }
+
+            .detail-key {
+                color: var(--text-faint);
+                text-align: right;
+                white-space: nowrap;
+            }
+
+            .detail-val {
+                color: var(--text);
+                word-break: break-word;
+            }
+
+            .trait-grid {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.4em;
+            }
+
+            .trait-pill {
+                padding: 0.2em 0.6em;
+                border-radius: 6px;
+                background: var(--purple-dim);
+                border: 1px solid var(--border);
+                font-size: 0.8em;
+                color: var(--text);
+            }
+
+            .trait-pill .trait-key {
+                color: var(--text-faint);
+                margin-right: 0.3em;
+            }
+
+            .location-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3em;
+            }
+
+            .location-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5em;
+                font-size: 0.85em;
+                padding: 0.3em 0.5em;
+                border-radius: 6px;
+                background: var(--bg-card);
+            }
+
+            .location-flag { font-size: 1.1em; }
+
+            .location-place { color: var(--text); flex: 1; }
+
+            .location-time { color: var(--text-faint); font-size: 0.85em; }
+
+            /* ── Turn card (reading/followup display) ── */
+            .turn-card {
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 1em;
+                margin-bottom: 0.8em;
+            }
+
+            .turn-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 0.6em;
+            }
+
+            .turn-type {
+                font-family: var(--font-display);
+                color: var(--gold);
+                font-size: 0.9em;
+            }
+
+            .turn-meta {
+                color: var(--text-faint);
+                font-size: 0.75em;
+            }
+
+            .turn-question {
+                color: var(--text-dim);
+                font-style: italic;
+                margin-bottom: 0.5em;
+                font-size: 0.9em;
+            }
+
+            .turn-answer {
+                color: var(--text);
+                font-size: 0.85em;
+                line-height: 1.5;
+                white-space: pre-wrap;
+                max-height: 300px;
+                overflow-y: auto;
+            }
+
+            .card-list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5em;
+                margin-bottom: 0.8em;
+            }
+
+            .card-chip {
+                padding: 0.3em 0.7em;
+                border-radius: 6px;
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                font-size: 0.8em;
+            }
+
+            .card-chip .pos { color: var(--text-faint); margin-right: 0.3em; }
+            .card-chip .name { color: var(--gold); }
+            .card-chip .rev { color: var(--accent); margin-left: 0.2em; }
         `,
     ];
 
@@ -381,6 +598,10 @@ export class DashboardPanel extends LitElement {
 
     @state() private _autoRefresh = false;
     @state() private _lastRefresh = '';
+    @state() private _view: DashView = 'overview';
+    @state() private _userData: UserDetailData | null = null;
+    @state() private _gameData: GameDetailData | null = null;
+    @state() private _drillLoading = false;
 
     /** Validated key — only set after server confirms it. */
     private _adminKey = '';
@@ -528,6 +749,10 @@ export class DashboardPanel extends LitElement {
     // ── Authenticated dashboard ───────────────────────────────────────
 
     private _renderDashboard() {
+        if (this._view === 'user' && this._userData) return this._renderUserDetail();
+        if (this._view === 'game' && this._gameData) return this._renderGameDetail();
+        if (this._drillLoading) return html`<div class="center" style="padding:3em 0;"><div class="spinner spinner-lg"></div></div>`;
+
         return html`
             <div class="controls">
                 ${([7, 14, 30] as const).map(d => html`
@@ -699,8 +924,8 @@ export class DashboardPanel extends LitElement {
                                 ${d.recentGames.map(g => html`
                                     <tr>
                                         <td>${this._formatTime(g.createdAt)}</td>
-                                        <td>${g.uid}</td>
-                                        <td>${g.spreadType}-card</td>
+                                        <td><a class="drill-link" @click=${() => this._openUser(g.uid)}>${g.uid}</a></td>
+                                        <td><a class="drill-link" @click=${() => this._openGame(g.gameId)}>${g.spreadType}-card</a></td>
                                         <td>${g.topic ? html`<span class="tag topic">${g.topic}</span>` : '-'}</td>
                                         <td><span class="tag lang">${g.language}</span></td>
                                         <td>${g.turnCount}</td>
@@ -818,6 +1043,336 @@ export class DashboardPanel extends LitElement {
         } finally {
             this._loading = false;
         }
+    }
+
+    // ── Drill-down navigation ─────────────────────────────────────────
+
+    private async _openUser(uidFragment: string): Promise<void> {
+        // uid in overview table is truncated (first 8 chars + "..."), resolve from recent games
+        const fullUid = this._data?.recentGames.find(g => g.uid === uidFragment)
+            ? uidFragment : uidFragment;
+        // We pass the fragment as-is; the API will match by full uid
+        this._drillLoading = true;
+        this._error = '';
+        try {
+            const base = this.services?.config?.apiBase ?? '';
+            // The uid fragment from the dashboard includes "..." suffix — strip it
+            const uid = fullUid.replace(/\.+$/, '');
+            const res = await fetch(`${base}/api/admin/user/${uid}`, {
+                headers: { 'X-Admin-Key': this._adminKey },
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({})) as Record<string, string>;
+                throw new Error(body.message || body.error || `HTTP ${res.status}`);
+            }
+            this._userData = await res.json() as UserDetailData;
+            this._view = 'user';
+        } catch (err) {
+            this._error = err instanceof Error ? err.message : String(err);
+        } finally {
+            this._drillLoading = false;
+        }
+    }
+
+    private async _openGame(gameId: string): Promise<void> {
+        this._drillLoading = true;
+        this._error = '';
+        try {
+            const base = this.services?.config?.apiBase ?? '';
+            const res = await fetch(`${base}/api/admin/game/${gameId}`, {
+                headers: { 'X-Admin-Key': this._adminKey },
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({})) as Record<string, string>;
+                throw new Error(body.message || body.error || `HTTP ${res.status}`);
+            }
+            this._gameData = await res.json() as GameDetailData;
+            this._view = 'game';
+        } catch (err) {
+            this._error = err instanceof Error ? err.message : String(err);
+        } finally {
+            this._drillLoading = false;
+        }
+    }
+
+    private _backToOverview(): void {
+        this._view = 'overview';
+        this._userData = null;
+        this._gameData = null;
+        this._error = '';
+    }
+
+    // ── User detail view ──────────────────────────────────────────────
+
+    private _renderUserDetail() {
+        const d = this._userData!;
+        const u = d.user;
+
+        return html`
+            <div class="fade-in">
+                <div class="breadcrumb">
+                    <a class="drill-link" @click=${this._backToOverview}>Dashboard</a>
+                    <span class="sep">/</span>
+                    <span>User ${u.name ?? u.uid.slice(0, 8)}</span>
+                </div>
+
+                ${this._error ? html`<div class="error-box">${this._error}</div>` : nothing}
+
+                <!-- Profile -->
+                <div class="detail-section">
+                    <div class="section-title">Profile</div>
+                    <div class="detail-grid">
+                        <span class="detail-key">UID</span>
+                        <span class="detail-val">${u.uid}</span>
+                        ${u.name ? html`
+                            <span class="detail-key">Name</span>
+                            <span class="detail-val">${u.name}</span>
+                        ` : nothing}
+                        ${u.gender ? html`
+                            <span class="detail-key">Gender</span>
+                            <span class="detail-val">${u.gender}</span>
+                        ` : nothing}
+                        ${u.birthdate ? html`
+                            <span class="detail-key">Born</span>
+                            <span class="detail-val">${u.birthdate}</span>
+                        ` : nothing}
+                        <span class="detail-key">Language</span>
+                        <span class="detail-val">${u.preferences.language}</span>
+                        <span class="detail-key">Tone</span>
+                        <span class="detail-val">${u.preferences.tone}</span>
+                        <span class="detail-key">Readings</span>
+                        <span class="detail-val">${u.stats.totalReadings}</span>
+                        <span class="detail-key">Follow-ups</span>
+                        <span class="detail-val">${u.stats.totalFollowUps}</span>
+                        <span class="detail-key">First seen</span>
+                        <span class="detail-val">${this._formatTime(u.firstSeenAt)}</span>
+                        <span class="detail-key">Last seen</span>
+                        <span class="detail-val">${this._formatTime(u.lastSeenAt)}</span>
+                        ${u.locations.lastCountry ? html`
+                            <span class="detail-key">Last country</span>
+                            <span class="detail-val">${u.locations.lastCountry}</span>
+                        ` : nothing}
+                        ${u.locations.lastCity ? html`
+                            <span class="detail-key">Last city</span>
+                            <span class="detail-val">${u.locations.lastCity}</span>
+                        ` : nothing}
+                    </div>
+                </div>
+
+                <!-- Traits -->
+                ${Object.keys(u.traits).length > 0 ? html`
+                    <div class="detail-section">
+                        <div class="section-title">Traits</div>
+                        <div class="trait-grid">
+                            ${Object.entries(u.traits).map(([k, v]) => html`
+                                <div class="trait-pill">
+                                    <span class="trait-key">${k.replace(/_/g, ' ')}:</span>${v}
+                                </div>
+                            `)}
+                        </div>
+                    </div>
+                ` : nothing}
+
+                <!-- Locations -->
+                ${d.locations.length > 0 ? html`
+                    <div class="detail-section">
+                        <div class="section-title">Recent Locations</div>
+                        <div class="location-list">
+                            ${d.locations.map(loc => html`
+                                <div class="location-row">
+                                    <span class="location-flag">${this._countryFlag(loc.country)}</span>
+                                    <span class="location-place">
+                                        ${[loc.city, loc.country].filter(Boolean).join(', ') || 'Unknown'}
+                                        ${loc.timezone ? html` <span class="faint-text">(${loc.timezone})</span>` : nothing}
+                                    </span>
+                                    <span class="location-time">${this._formatTime(loc.lastSeen)}</span>
+                                </div>
+                            `)}
+                        </div>
+                    </div>
+                ` : nothing}
+
+                <!-- Games -->
+                <div class="detail-section">
+                    <div class="section-title">Games (${d.totalGames} total, showing last ${d.games.length})</div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Spread</th>
+                                    <th>Topic</th>
+                                    <th>Lang</th>
+                                    <th>Turns</th>
+                                    <th>Location</th>
+                                    <th>Question</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${d.games.map(g => html`
+                                    <tr>
+                                        <td>${this._formatTime(g.createdAt)}</td>
+                                        <td><a class="drill-link" @click=${() => this._openGame(g.gameId)}>${g.spreadType}-card</a></td>
+                                        <td>${g.topic ? html`<span class="tag topic">${g.topic}</span>` : '-'}</td>
+                                        <td><span class="tag lang">${g.language}</span></td>
+                                        <td>${g.turnCount}</td>
+                                        <td>${g.location
+                                            ? html`${this._countryFlag(g.location.country)} ${g.location.city ?? g.location.country ?? ''}`
+                                            : '-'}</td>
+                                        <td style="max-width: 160px; overflow: hidden; text-overflow: ellipsis;">
+                                            ${g.question ?? '-'}
+                                        </td>
+                                    </tr>
+                                `)}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ── Game detail view ──────────────────────────────────────────────
+
+    private _renderGameDetail() {
+        const d = this._gameData!;
+        const g = d.game;
+        const reading = g.reading as { cards?: Array<{ position: string; name: string; reading: string }>; overall?: string } | null;
+
+        return html`
+            <div class="fade-in">
+                <div class="breadcrumb">
+                    <a class="drill-link" @click=${this._backToOverview}>Dashboard</a>
+                    <span class="sep">/</span>
+                    <a class="drill-link" @click=${() => this._openUser(g.uid)}>User ${g.uid.slice(0, 8)}</a>
+                    <span class="sep">/</span>
+                    <span>Game ${g.gameId.slice(0, 8)}</span>
+                </div>
+
+                ${this._error ? html`<div class="error-box">${this._error}</div>` : nothing}
+
+                <!-- Game info -->
+                <div class="detail-section">
+                    <div class="section-title">${g.spreadType}-Card Spread</div>
+                    <div class="detail-grid">
+                        <span class="detail-key">Game ID</span>
+                        <span class="detail-val">${g.gameId}</span>
+                        <span class="detail-key">Created</span>
+                        <span class="detail-val">${this._formatTime(g.createdAt)}</span>
+                        ${g.question ? html`
+                            <span class="detail-key">Question</span>
+                            <span class="detail-val">${g.question}</span>
+                        ` : nothing}
+                        ${g.topic ? html`
+                            <span class="detail-key">Topic</span>
+                            <span class="detail-val">${g.topic}</span>
+                        ` : nothing}
+                        <span class="detail-key">Language</span>
+                        <span class="detail-val">${g.language}</span>
+                        <span class="detail-key">Tone</span>
+                        <span class="detail-val">${g.tone}</span>
+                        <span class="detail-key">Turns</span>
+                        <span class="detail-val">${g.turnCount}</span>
+                        ${g.location?.country ? html`
+                            <span class="detail-key">Location</span>
+                            <span class="detail-val">${this._countryFlag(g.location.country)} ${[g.location.city, g.location.country].filter(Boolean).join(', ')}</span>
+                        ` : nothing}
+                    </div>
+                </div>
+
+                <!-- Cards dealt -->
+                <div class="detail-section">
+                    <div class="section-title">Cards</div>
+                    <div class="card-list">
+                        ${g.cards.map(c => html`
+                            <div class="card-chip">
+                                <span class="pos">${c.position}:</span>
+                                <span class="name">${c.name}</span>
+                                ${c.reversed ? html`<span class="rev">(Rev)</span>` : nothing}
+                            </div>
+                        `)}
+                    </div>
+                </div>
+
+                <!-- AI Reading -->
+                ${reading?.cards ? html`
+                    <div class="detail-section">
+                        <div class="section-title">Reading</div>
+                        ${reading.cards.map(c => html`
+                            <div class="turn-card">
+                                <div class="turn-header">
+                                    <span class="turn-type">${c.position}: ${c.name}</span>
+                                </div>
+                                <div class="turn-answer">${c.reading}</div>
+                            </div>
+                        `)}
+                        ${reading.overall ? html`
+                            <div class="turn-card">
+                                <div class="turn-header">
+                                    <span class="turn-type">Overall Synthesis</span>
+                                </div>
+                                <div class="turn-answer">${reading.overall}</div>
+                            </div>
+                        ` : nothing}
+                    </div>
+                ` : nothing}
+
+                <!-- Turns (follow-ups) -->
+                ${d.turns.filter(t => t.turnType === 'followup').length > 0 ? html`
+                    <div class="detail-section">
+                        <div class="section-title">Follow-up Conversations</div>
+                        ${d.turns.filter(t => t.turnType === 'followup').map(t => html`
+                            <div class="turn-card">
+                                <div class="turn-header">
+                                    <span class="turn-type">Turn ${t.turnNumber}</span>
+                                    <span class="turn-meta">${t.aiProvider}/${t.aiModel} | ${(t.responseTimeMs / 1000).toFixed(1)}s</span>
+                                </div>
+                                ${t.question ? html`
+                                    <div class="turn-question">"${t.question}"</div>
+                                ` : nothing}
+                                <div class="turn-answer">${t.answerText}</div>
+                                ${t.userContextDelta && Object.keys(t.userContextDelta).some(k => {
+                                    const v = t.userContextDelta![k];
+                                    if (k === 'traits' && typeof v === 'object') return Object.keys(v as object).length > 0;
+                                    return v != null;
+                                }) ? html`
+                                    <div style="margin-top: 0.5em;">
+                                        <span class="faint-text">Extracted: </span>
+                                        <span class="dim-text">${JSON.stringify(t.userContextDelta)}</span>
+                                    </div>
+                                ` : nothing}
+                            </div>
+                        `)}
+                    </div>
+                ` : nothing}
+
+                <!-- Reading turn performance -->
+                ${d.turns.length > 0 ? html`
+                    <div class="detail-section">
+                        <div class="section-title">Performance</div>
+                        <div class="perf-grid">
+                            ${d.turns.map(t => html`
+                                <div class="perf-card">
+                                    <div class="perf-title">Turn ${t.turnNumber} (${t.turnType})</div>
+                                    <div class="perf-value">${(t.responseTimeMs / 1000).toFixed(1)}s</div>
+                                    <div class="faint-text" style="font-size:0.7em;">${t.aiProvider}/${t.aiModel}</div>
+                                </div>
+                            `)}
+                        </div>
+                    </div>
+                ` : nothing}
+            </div>
+        `;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
+    private _countryFlag(countryCode: string | null): string {
+        if (!countryCode || countryCode.length !== 2) return '';
+        const code = countryCode.toUpperCase();
+        return String.fromCodePoint(
+            ...code.split('').map(c => 0x1F1E6 + c.charCodeAt(0) - 65),
+        );
     }
 }
 

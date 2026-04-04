@@ -7,6 +7,7 @@ import { handleEvent } from './handlers/event.js';
 import { handleVersion } from './handlers/version.js';
 import { handleExport } from './handlers/admin-export.js';
 import { handleDashboard } from './handlers/admin-dashboard.js';
+import { handleAdminUserDetail, handleAdminGameDetail } from './handlers/admin-users.js';
 import {
     handleSchemaActivate,
     handleSchemaRollback,
@@ -95,6 +96,12 @@ export default {
                     : Response.json({ valid: false, error: 'Invalid admin key' }, { status: 401 });
             } else if (path === '/api/admin/dashboard' && request.method === 'GET') {
                 response = await handleDashboard(request, env);
+            } else if (path.startsWith('/api/admin/user/') && request.method === 'GET') {
+                const uid = path.slice('/api/admin/user/'.length);
+                response = await handleAdminUserDetail(request, env, uid);
+            } else if (path.startsWith('/api/admin/game/') && request.method === 'GET') {
+                const gameId = path.slice('/api/admin/game/'.length);
+                response = await handleAdminGameDetail(request, env, gameId);
             } else if (path === '/api/admin/export' && request.method === 'GET') {
                 response = await handleExport(request, env);
             } else if (path === '/api/admin/schema/activate' && request.method === 'POST') {
