@@ -113,28 +113,36 @@ export class CardSpread extends LitElement {
 
             .question-section {
                 width: 100%;
-                max-width: 360px;
-                margin-top: 0.8em;
+                max-width: min(100%, 340px);
+                margin-top: 0.55em;
                 position: relative;
             }
 
             .question-input {
                 width: 100%;
-                padding: 0.8em;
+                padding: 0.7em 0.8em;
                 background: var(--bg-card);
                 border: 1px solid var(--border);
                 border-radius: 8px;
                 color: var(--text);
                 font-family: var(--font-body);
-                font-size: 0.95em;
+                font-size: 0.92em;
                 resize: none;
                 outline: none;
-                transition: border-color 0.2s;
-                min-height: 5.2em;
+                transition: border-color 0.2s, min-height 0.2s ease, box-shadow 0.2s ease;
+                min-height: 2.8em;
+                max-height: 7.8em;
+                overflow: hidden;
+                line-height: 1.35;
             }
 
             .question-input:focus {
                 border-color: var(--gold-dim);
+                box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.08);
+            }
+
+            .question-input.expanded {
+                min-height: 4.9em;
             }
 
             .question-input::placeholder {
@@ -168,6 +176,7 @@ export class CardSpread extends LitElement {
 
             .progress-section {
                 text-align: center;
+                margin-top: 1.15em;
             }
 
             .progress-text {
@@ -186,7 +195,7 @@ export class CardSpread extends LitElement {
                 align-items: center;
                 justify-content: space-between;
                 gap: 0.6em;
-                margin-bottom: 0.45em;
+                margin-bottom: 0.35em;
             }
 
             .question-label {
@@ -323,24 +332,27 @@ export class CardSpread extends LitElement {
                             </div>
                         </div>
                         <textarea
-                            class="question-input"
-                            rows="2"
+                            class="question-input ${this._questionFocused || this._question.trim() || this._sttListening ? 'expanded' : ''}"
+                            rows="1"
                             placeholder="Ask a question (optional)..."
                             .value=${this._question}
                             @focus=${() => {
                                 this._questionFocused = true;
+                                this._resizeQuestionInput();
                                 if (this.services.sttService.isAvailable() && !this._sttStatus) {
                                     this._sttStatus = 'Tap the microphone to dictate your question.';
                                 }
                             }}
                             @blur=${() => {
                                 this._questionFocused = false;
+                                this._resizeQuestionInput();
                                 if (!this._sttListening && this._sttStatus === 'Tap the microphone to dictate your question.') {
                                     this._sttStatus = '';
                                 }
                             }}
                             @input=${(e: InputEvent) => {
                                 this._question = (e.target as HTMLTextAreaElement).value;
+                                this._resizeQuestionInput();
                             }}
                         ></textarea>
                         <div class="question-status">${this._sttStatus}</div>
@@ -536,15 +548,20 @@ export class CardSpread extends LitElement {
                 const clean = transcript.trim();
                 this._question = this._mergeTranscript(clean);
                 this._sttStatus = clean ? `Listening: ${clean}` : 'Listening...';
+                this._resizeQuestionInput();
             },
             onResult: (transcript) => {
                 const clean = transcript.trim();
                 this._question = this._mergeTranscript(clean);
                 this._sttStatus = clean ? 'Question captured.' : '';
-                this.updateComplete.then(() => this._questionInput?.focus());
+                this.updateComplete.then(() => {
+                    this._resizeQuestionInput();
+                    this._questionInput?.focus();
+                });
             },
             onEnd: () => {
                 this._sttListening = false;
+                this._resizeQuestionInput();
                 if (this._sttStatus === 'Listening...') {
                     this._sttStatus = '';
                 }
@@ -562,6 +579,21 @@ export class CardSpread extends LitElement {
         }
 
         return [this._sttBaseQuestion, transcript].filter(Boolean).join(this._sttBaseQuestion ? ' ' : '');
+    }
+
+    private _resizeQuestionInput(): void {
+        const input = this._questionInput;
+        if (!input) {
+            return;
+        }
+
+        input.style.height = 'auto';
+        const compactHeight = 44;
+        const expandedHeight = Math.min(input.scrollHeight, 124);
+        const targetHeight = this._questionFocused || this._question.trim() || this._sttListening
+            ? Math.max(expandedHeight, 78)
+            : compactHeight;
+        input.style.height = `${targetHeight}px`;
     }
 }
 

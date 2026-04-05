@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
+import { getCardArt } from './card-art-registry.js';
 import './tarot-card.js';
 
 /**
@@ -77,11 +78,15 @@ export class ReadingDisplay extends LitElement {
             }
 
             .overall-section {
+                position: relative;
                 padding: 1.2em;
                 background: linear-gradient(135deg, var(--bg-card), var(--purple-dim));
                 border: 1px solid var(--gold-dim);
                 border-radius: 10px;
                 animation: fadeIn 0.5s ease-out 0.5s both;
+                overflow: visible;
+                cursor: pointer;
+                touch-action: manipulation;
             }
 
             .overall-title {
@@ -94,6 +99,60 @@ export class ReadingDisplay extends LitElement {
             .overall-text {
                 line-height: 1.7;
                 font-size: var(--font-reading-size, 0.95em);
+            }
+
+            .overall-actions {
+                position: absolute;
+                top: -18px;
+                right: 14px;
+                display: flex;
+                gap: 0.45em;
+                z-index: 2;
+            }
+
+            .overall-action {
+                width: 42px;
+                height: 42px;
+                border-radius: 999px;
+                border: 1px solid rgba(201, 168, 76, 0.72);
+                background: linear-gradient(180deg, rgba(15, 9, 26, 0.98), rgba(50, 28, 72, 0.96));
+                color: var(--gold);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+                cursor: pointer;
+                transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            }
+
+            .overall-action:hover {
+                transform: translateY(-1px);
+                border-color: var(--gold);
+                box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
+            }
+
+            .overall-action svg {
+                width: 20px;
+                height: 20px;
+                stroke: currentColor;
+                fill: none;
+                stroke-width: 1.8;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+            }
+
+            .copy-tooltip {
+                position: absolute;
+                top: -54px;
+                right: 10px;
+                padding: 0.35em 0.7em;
+                border-radius: 999px;
+                border: 1px solid rgba(201, 168, 76, 0.45);
+                background: rgba(9, 6, 18, 0.96);
+                color: var(--gold);
+                font-size: 0.78em;
+                white-space: nowrap;
+                box-shadow: 0 12px 26px rgba(0, 0, 0, 0.28);
             }
 
             .actions-bar {
@@ -117,6 +176,11 @@ export class ReadingDisplay extends LitElement {
 
     @state() private _speaking = false;
     @state() private _ttsStatus = '';
+    @state() private _showOverallActions = false;
+    @state() private _copyTooltip = false;
+
+    private _overallActionsTimer: ReturnType<typeof setTimeout> | null = null;
+    private _copyTooltipTimer: ReturnType<typeof setTimeout> | null = null;
 
     private get _game() {
         return this.services?.gameContext;
@@ -168,7 +232,20 @@ export class ReadingDisplay extends LitElement {
                 `})}
 
                 ${overall ? html`
-                    <div class="overall-section">
+                    <div class="overall-section" @click=${this._revealOverallActions}>
+                        ${this._showOverallActions ? html`
+                            <div class="overall-actions">
+                                <button class="overall-action" title="Download reading image" @click=${this._downloadReadingImage}>
+                                    ${this._pictureIcon()}
+                                </button>
+                                <button class="overall-action" title="Copy reading text" @click=${this._copyOverallReading}>
+                                    ${this._copyIcon()}
+                                </button>
+                            </div>
+                        ` : nothing}
+                        ${this._copyTooltip ? html`
+                            <div class="copy-tooltip">Text copied to clipboard</div>
+                        ` : nothing}
                         <div class="overall-title">Overall Reading</div>
                         <div class="overall-text">${overall}</div>
                     </div>
@@ -234,6 +311,270 @@ export class ReadingDisplay extends LitElement {
     private _newReading(): void {
         this.services.speechService.stop();
         this.dispatchEvent(new CustomEvent('new-reading'));
+    }
+
+    private _revealOverallActions(): void {
+        this._showOverallActions = true;
+        this.resetOverallActionsTimer();
+    }
+
+    private _copyIcon() {
+        return html`
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="8" width="10" height="12" rx="2"></rect>
+                <path d="M7 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+            </svg>
+        `;
+    }
+
+    private _pictureIcon() {
+        return html`
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                <circle cx="9" cy="10" r="1.5"></circle>
+                <path d="M21 16l-4.5-4.5L9 19"></path>
+            </svg>
+        `;
+    }
+
+    private async _copyOverallReading(event: Event): Promise<void> {
+        event.stopPropagation();
+        const overall = ((this._game?.reading as any)?.overall as string | undefined) ?? '';
+        if (!overall) {
+            return;
+        }
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(overall);
+            } else {
+                const area = document.createElement('textarea');
+                area.value = overall;
+                area.setAttribute('readonly', 'true');
+                area.style.position = 'absolute';
+                area.style.left = '-9999px';
+                document.body.appendChild(area);
+                area.select();
+                document.execCommand('copy');
+                document.body.removeChild(area);
+            }
+
+            this._copyTooltip = true;
+            if (this._copyTooltipTimer) {
+                clearTimeout(this._copyTooltipTimer);
+            }
+            this._copyTooltipTimer = setTimeout(() => {
+                this._copyTooltip = false;
+            }, 1000);
+            this.resetOverallActionsTimer();
+        } catch (error) {
+            console.error('Copy failed:', error);
+        }
+    }
+
+    private async _downloadReadingImage(event: Event): Promise<void> {
+        event.stopPropagation();
+        const game = this._game;
+        const reading = game?.reading as any;
+        if (!game || !reading?.overall) {
+            return;
+        }
+
+        try {
+            const blob = await this.buildReadingImageBlob();
+            if (!blob) {
+                return;
+            }
+
+            const fileName = `tarot-reading-${new Date().toISOString().slice(0, 10)}.png`;
+            const file = new File([blob], fileName, { type: 'image/png' });
+            const shareCapable = typeof navigator.canShare === 'function'
+                && navigator.canShare({ files: [file] });
+
+            if (shareCapable && typeof navigator.share === 'function') {
+                await navigator.share({
+                    files: [file],
+                    title: 'Tarot Oracle Reading',
+                    text: 'Tarot Oracle reading',
+                });
+            } else {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+            this.resetOverallActionsTimer();
+        } catch (error) {
+            console.error('Reading image export failed:', error);
+        }
+    }
+
+    private async buildReadingImageBlob(): Promise<Blob | null> {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1080;
+        canvas.height = 1350;
+        const context = canvas.getContext('2d');
+        if (!context) {
+            return null;
+        }
+
+        const game = this._game!;
+        const reading = game.reading as any;
+        const cards = (game.cards ?? []).slice(0, 5);
+        const overallText = String(reading?.overall ?? '');
+
+        const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, '#110a1f');
+        gradient.addColorStop(0.55, '#2a153d');
+        gradient.addColorStop(1, '#1b112e');
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        context.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        for (let i = 0; i < 18; i += 1) {
+            context.beginPath();
+            context.arc(80 + ((i * 59) % 980), 70 + ((i * 91) % 1200), 1.5 + (i % 3), 0, Math.PI * 2);
+            context.fill();
+        }
+
+        context.fillStyle = '#d8bc74';
+        context.font = '700 48px Georgia, serif';
+        context.fillText('Tarot Oracle', 74, 86);
+        context.fillStyle = '#efe7d3';
+        context.font = '400 25px Georgia, serif';
+        context.fillText('Overall Reading', 74, 126);
+
+        const cardAreaX = 72;
+        const cardAreaY = 170;
+        const cardAreaWidth = 360;
+        const cardAreaHeight = 320;
+
+        context.fillStyle = 'rgba(255,255,255,0.04)';
+        context.fillRect(cardAreaX, cardAreaY, cardAreaWidth, cardAreaHeight);
+
+        const miniCards = cards.slice(0, 3);
+        await Promise.all(miniCards.map(async (card, index) => {
+            const art = getCardArt(card.name, 220, 380);
+            if (!art) {
+                return;
+            }
+            const image = await this.svgToImage(art);
+            const width = 92;
+            const height = 158;
+            const x = cardAreaX + 20 + (index * 92);
+            const y = cardAreaY + 26 + (index === 1 ? 0 : 14);
+            context.save();
+            context.translate(x + width / 2, y + height / 2);
+            context.rotate((index - 1) * 0.12);
+            context.shadowColor = 'rgba(0, 0, 0, 0.28)';
+            context.shadowBlur = 18;
+            context.drawImage(image, -width / 2, -height / 2, width, height);
+            context.restore();
+        }));
+
+        context.fillStyle = '#d8bc74';
+        context.font = '600 22px Georgia, serif';
+        context.fillText('Cards Drawn', cardAreaX + 20, cardAreaY + cardAreaHeight - 26);
+
+        const textX = 470;
+        const textY = 174;
+        const textWidth = 536;
+        let cursorY = textY;
+
+        context.fillStyle = '#efe7d3';
+        context.font = '400 34px Georgia, serif';
+        const wrapped = this.wrapText(context, overallText, textWidth, 18);
+        wrapped.forEach((line) => {
+            context.fillText(line, textX, cursorY);
+            cursorY += 44;
+        });
+
+        cursorY = Math.max(cursorY + 10, cardAreaY + 44);
+        context.font = '600 24px Georgia, serif';
+        context.fillStyle = '#d8bc74';
+        context.fillText('Spread', 74, 570);
+        context.font = '400 23px Georgia, serif';
+        context.fillStyle = '#efe7d3';
+        const spreadSummary = cards.map(card => `${card.position}: ${card.name}${card.reversed ? ' (Reversed)' : ''}`);
+        const spreadLines = this.wrapText(context, spreadSummary.join(' · '), 930, 3);
+        spreadLines.forEach((line, index) => {
+            context.fillText(line, 74, 612 + (index * 32));
+        });
+
+        return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    }
+
+    private wrapText(
+        context: CanvasRenderingContext2D,
+        text: string,
+        maxWidth: number,
+        maxLines: number,
+    ): string[] {
+        const words = text.split(/\s+/).filter(Boolean);
+        const lines: string[] = [];
+        let current = '';
+
+        for (const word of words) {
+            const next = current ? `${current} ${word}` : word;
+            if (context.measureText(next).width <= maxWidth) {
+                current = next;
+                continue;
+            }
+
+            lines.push(current);
+            current = word;
+            if (lines.length === maxLines) {
+                break;
+            }
+        }
+
+        if (lines.length < maxLines && current) {
+            lines.push(current);
+        }
+
+        if (lines.length === maxLines && words.length > 0) {
+            const last = lines[maxLines - 1] ?? '';
+            if (!text.endsWith(last)) {
+                lines[maxLines - 1] = `${last.replace(/[. ]+$/, '')}...`;
+            }
+        }
+
+        return lines;
+    }
+
+    private async svgToImage(svg: string): Promise<HTMLImageElement> {
+        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const image = new Image();
+        image.decoding = 'async';
+        await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('Failed to load card art'));
+            image.src = url;
+        });
+        URL.revokeObjectURL(url);
+        return image;
+    }
+
+    private resetOverallActionsTimer(): void {
+        if (this._overallActionsTimer) {
+            clearTimeout(this._overallActionsTimer);
+        }
+        this._overallActionsTimer = setTimeout(() => {
+            this._showOverallActions = false;
+        }, 3000);
+    }
+
+    override disconnectedCallback(): void {
+        super.disconnectedCallback();
+        if (this._overallActionsTimer) {
+            clearTimeout(this._overallActionsTimer);
+        }
+        if (this._copyTooltipTimer) {
+            clearTimeout(this._copyTooltipTimer);
+        }
     }
 }
 
