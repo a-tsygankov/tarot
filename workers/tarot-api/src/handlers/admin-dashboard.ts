@@ -24,6 +24,7 @@ export interface DashboardResponse {
         language: string;
         tone: string;
         turnCount: number;
+        city: string | null;
         createdAt: string;
     }>;
     performance: {
@@ -106,6 +107,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                                 language: g.language as string,
                                 tone: g.tone as string,
                                 turnCount: g.turnCount as number,
+                                city: (g.location as { city?: string | null } | undefined)?.city ?? null,
                                 createdAt: g.createdAt as string,
                             });
                         } catch { /* skip malformed */ }

@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
+import './tarot-card.js';
 
 /**
  * Displays the AI reading — card-by-card + overall summary.
@@ -25,6 +26,13 @@ export class ReadingDisplay extends LitElement {
                 border: 1px solid var(--border);
                 border-radius: 10px;
                 animation: fadeIn 0.5s ease-out both;
+            }
+
+            .card-reading-body {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.9em;
+                align-items: start;
             }
 
             .card-reading:nth-child(2) { animation-delay: 0.1s; }
@@ -57,6 +65,10 @@ export class ReadingDisplay extends LitElement {
                 color: var(--text);
                 line-height: 1.6;
                 font-size: var(--font-reading-size, 0.92em);
+            }
+
+            .insight-card {
+                align-self: start;
             }
 
             .overall-section {
@@ -119,18 +131,36 @@ export class ReadingDisplay extends LitElement {
             reading: string;
         }> ?? [];
         const overall = (reading as any).overall as string ?? '';
+        const dealtCards = this._game.cards ?? [];
 
         return html`
             <div class="reading-container">
-                ${cards.map(card => html`
+                ${cards.map((card, index) => {
+                    const dealt = dealtCards[index];
+                    return html`
                     <div class="card-reading">
                         <div class="card-reading-header">
                             <span class="card-reading-position">${card.position}</span>
                             <span class="card-reading-name">— ${card.name}</span>
                         </div>
-                        <div class="card-reading-text">${card.reading}</div>
+                        <div class="card-reading-body">
+                            <div class="insight-card">
+                                <tarot-card
+                                    face="front"
+                                    size="insight"
+                                    .cardName=${dealt?.name ?? card.name}
+                                    .position=${dealt?.position ?? card.position}
+                                    .reversed=${dealt?.reversed ?? false}
+                                    .previewEnabled=${true}
+                                    .showMeta=${false}
+                                    .width=${92}
+                                    .height=${150}
+                                ></tarot-card>
+                            </div>
+                            <div class="card-reading-text">${card.reading}</div>
+                        </div>
                     </div>
-                `)}
+                `})}
 
                 ${overall ? html`
                     <div class="overall-section">

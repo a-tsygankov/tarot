@@ -1,10 +1,9 @@
-import { LitElement, html, css, nothing } from 'lit';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import type { IProgressReporter } from '../../services/IProgressReporter.js';
-import { cardBackSvg, getCardArt } from './card-art-registry.js';
+import './tarot-card.js';
 
 // Major arcana names for random draw
 const MAJOR_ARCANA = [
@@ -94,94 +93,22 @@ export class CardSpread extends LitElement {
 
             .card-slot {
                 width: var(--card-w, 80px);
-                height: var(--card-h, 130px);
-                border: 2px dashed var(--border);
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                position: relative;
-                perspective: 600px;
-            }
-
-            .card-slot:hover:not(.dealt) {
-                border-color: var(--gold-dim);
-                background: var(--purple-dim);
-            }
-
-            .card-slot.dealt {
-                border-color: var(--gold);
-                cursor: default;
-            }
-
-            .card-face {
-                width: 100%;
-                height: 100%;
-                border-radius: 6px;
+                min-height: var(--card-h, 130px);
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
-                padding: 0.4em;
-                text-align: center;
-                transition: transform 0.6s ease;
-                backface-visibility: hidden;
+                transition: all 0.3s ease;
+                position: relative;
+                touch-action: manipulation;
             }
 
-            .card-back {
-                background: transparent;
-                border: none;
-                overflow: hidden;
+            .card-slot:hover:not(.dealt) {
+                transform: translateY(-2px);
             }
 
-            .card-back :first-child {
-                width: 100%;
-                height: 100%;
-                border-radius: 6px;
-            }
-
-            .card-front {
-                background: transparent;
-                border: none;
-                overflow: hidden;
-                animation: cardReveal 0.6s ease-out;
-            }
-
-            .card-front :first-child {
-                width: 100%;
-                height: 100%;
-                border-radius: 6px;
-            }
-
-            .card-front.text-only {
-                background: linear-gradient(135deg, var(--bg-card), var(--purple-dim));
-                border: 1px solid var(--gold-dim);
-            }
-
-            @keyframes cardReveal {
-                from { transform: rotateY(90deg); opacity: 0.5; }
-                to { transform: rotateY(0); opacity: 1; }
-            }
-
-            .card-name {
-                font-family: var(--font-display);
-                color: var(--gold);
-                font-size: 0.65em;
-                line-height: 1.2;
-            }
-
-            .card-position {
-                color: var(--text-dim);
-                font-size: 0.55em;
-                margin-top: 0.3em;
-            }
-
-            .card-reversed {
-                color: var(--accent);
-                font-size: 0.5em;
-                font-style: italic;
+            .card-slot.dealt {
+                cursor: default;
             }
 
             .question-section {
@@ -264,6 +191,10 @@ export class CardSpread extends LitElement {
                 gap: 0.3em;
                 justify-content: center;
             }
+
+            tarot-card {
+                touch-action: manipulation;
+            }
         `,
     ];
 
@@ -285,6 +216,11 @@ export class CardSpread extends LitElement {
 
     private get _layout(): SpreadLayout {
         return SPREAD_LAYOUTS[this._spreadSize] ?? SPREAD_LAYOUTS[3];
+    }
+
+    override disconnectedCallback(): void {
+        super.disconnectedCallback();
+        void this.services?.audioCueService.stopOracleWaiting();
     }
 
     override render() {
@@ -367,33 +303,48 @@ export class CardSpread extends LitElement {
     private _renderCardSlot(position: string, index: number) {
         const layout = this._layout;
         const cardLayout = layout.cards[index] ?? layout.cards[0];
-        const slotStyle = `--card-w: ${cardLayout.width}; --card-h: ${cardLayout.height}; transform: rotate(${cardLayout.tilt}deg) translateY(${cardLayout.offsetY}px);`;
+        const slotStyle = `--card-w: ${cardLayout.width}; --card-h: ${cardLayout.height};`;
 
         const card = this._dealtCards[index];
         if (card) {
-            const art = getCardArt(card.name, 200, 345);
             return html`
                 <div class="card-slot dealt" style=${slotStyle}>
-                    <div class="card-face card-front ${art ? '' : 'text-only'}">
-                        ${art ? unsafeHTML(art) : html`
-                            <div class="card-name">${card.name}</div>
-                            <div class="card-position">${card.position}</div>
-                            ${card.reversed ? html`<div class="card-reversed">Reversed</div>` : nothing}
-                        `}
-                    </div>
+                    <tarot-card
+                        face="front"
+                        size=${this._spreadSize === 1 ? 'insight' : 'spread'}
+                        .cardName=${card.name}
+                        .position=${card.position}
+                        .reversed=${card.reversed}
+                        .showMeta=${true}
+                        .previewEnabled=${true}
+                        .width=${this._pixelValue(cardLayout.width)}
+                        .height=${this._pixelValue(cardLayout.height)}
+                        .tiltDeg=${cardLayout.tilt}
+                        .offsetY=${cardLayout.offsetY}
+                    ></tarot-card>
                 </div>
             `;
         }
 
         const canDeal = index === this._dealtCards.length;
-        const backArt = cardBackSvg(200, 345);
         return html`
             <div
                 class="card-slot"
                 style="${slotStyle} opacity: ${canDeal ? 1 : 0.4}"
-                @click=${canDeal ? () => this._dealCard(position) : undefined}
             >
-                <div class="card-face card-back">${unsafeHTML(backArt)}</div>
+                <tarot-card
+                    face="back"
+                    size=${this._spreadSize === 1 ? 'insight' : 'spread'}
+                    .position=${position}
+                    .previewEnabled=${true}
+                    .activateOnTap=${canDeal}
+                    .interactive=${canDeal}
+                    .width=${this._pixelValue(cardLayout.width)}
+                    .height=${this._pixelValue(cardLayout.height)}
+                    .tiltDeg=${cardLayout.tilt}
+                    .offsetY=${cardLayout.offsetY}
+                    @card-activate=${() => this._dealCard(position)}
+                ></tarot-card>
             </div>
         `;
     }
@@ -404,6 +355,7 @@ export class CardSpread extends LitElement {
 
         const card = { name, position, reversed };
         this._dealtCards = [...this._dealtCards, card];
+        void this.services.audioCueService.playCardReveal();
 
         // Add to game context
         this.services.gameContext.addCard({ position, name, reversed });
@@ -439,6 +391,7 @@ export class CardSpread extends LitElement {
         };
 
         try {
+            await this.services.audioCueService.startOracleWaiting();
             const response = await this.services.apiService.fetchReadingAsync(
                 game,
                 { progress },
@@ -459,9 +412,15 @@ export class CardSpread extends LitElement {
             if (stack) console.error('Stack:', stack);
             this._progressText = `Error: ${msg}`;
         } finally {
+            await this.services.audioCueService.stopOracleWaiting();
             this._loading = false;
             this.dispatchEvent(new CustomEvent('loading', { detail: false }));
         }
+    }
+
+    private _pixelValue(value: string): number {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 110;
     }
 }
 

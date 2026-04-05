@@ -1,4 +1,5 @@
 import type { GameDocument, TurnDocument } from '@shared/contracts/entity-contracts.js';
+import type { ReadingRequest } from '@shared/contracts/api-contracts.js';
 import { WORKER_CONFIG } from '../config.js';
 import { r2GetJson, r2PutJson } from '../services/r2-adapter.js';
 
@@ -31,6 +32,7 @@ export class R2GameRepository {
         language: string;
         tone: string;
         location?: { country: string | null; city: string | null; timezone: string | null };
+        originalRequest?: ReadingRequest;
     }): Promise<GameDocument> {
         const doc: GameDocument = {
             type: 'game',
@@ -49,6 +51,7 @@ export class R2GameRepository {
             readingDigest: null,
             turnCount: 0,
             ...(params.location ? { location: params.location } : {}),
+            ...(params.originalRequest ? { originalRequest: params.originalRequest } : {}),
         };
         await r2PutJson(this.r2, this.gameKey(params.gameId), doc);
         return doc;

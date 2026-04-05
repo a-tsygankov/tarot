@@ -10,6 +10,26 @@ export const sharedStyles = css`
         color: var(--text);
     }
 
+    :host, * {
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    button,
+    a,
+    input,
+    textarea,
+    select {
+        touch-action: manipulation;
+    }
+
+    @media (pointer: coarse) {
+        input,
+        textarea,
+        select {
+            font-size: 16px !important;
+        }
+    }
+
     /* ── Buttons ─────────────────────────────────────── */
 
     .btn {
@@ -28,6 +48,7 @@ export const sharedStyles = css`
         transition: all 0.2s ease;
         user-select: none;
         -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
     }
 
     .btn:hover, .btn:focus-visible {
