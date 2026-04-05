@@ -59,7 +59,7 @@ export const CONFIG = {
         eventsPerMinute: 100,
     },
 
-    version: '2.3.0',
+    version: '2.3.1',
     apiVersion: '2.0',
     debugTripleTapMs: 2000,
 } as const;

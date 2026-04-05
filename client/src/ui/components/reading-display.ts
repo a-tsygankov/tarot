@@ -29,10 +29,7 @@ export class ReadingDisplay extends LitElement {
             }
 
             .card-reading-body {
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 0.9em;
-                align-items: start;
+                display: block;
             }
 
             .card-reading:nth-child(2) { animation-delay: 0.1s; }
@@ -68,7 +65,15 @@ export class ReadingDisplay extends LitElement {
             }
 
             .insight-card {
-                align-self: start;
+                float: inline-start;
+                margin: 0.15em 0.85em 0.45em 0;
+                shape-margin: 0.6em;
+            }
+
+            .card-reading::after {
+                content: '';
+                display: block;
+                clear: both;
             }
 
             .overall-section {
@@ -153,8 +158,8 @@ export class ReadingDisplay extends LitElement {
                                     .reversed=${dealt?.reversed ?? false}
                                     .previewEnabled=${true}
                                     .showMeta=${false}
-                                    .width=${92}
-                                    .height=${150}
+                                    .width=${70}
+                                    .height=${114}
                                 ></tarot-card>
                             </div>
                             <div class="card-reading-text">${card.reading}</div>

@@ -114,7 +114,7 @@ type DashView = 'overview' | 'user' | 'game';
 /**
  * Admin dashboard — analytics overview, accessible from debug mode.
  */
-@customElement('dashboard-panel')
+@customElement('dashboard-panel-legacy')
 export class DashboardPanel extends LitElement {
     static override styles = [
         sharedStyles,
@@ -1391,6 +1391,6 @@ export class DashboardPanel extends LitElement {
 
 declare global {
     interface HTMLElementTagNameMap {
-        'dashboard-panel': DashboardPanel;
+        'dashboard-panel-legacy': DashboardPanel;
     }
 }

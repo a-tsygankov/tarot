@@ -1,5 +1,6 @@
 import type { Env } from '../env.js';
-import type { DailySummary } from '@shared/contracts/entity-contracts.js';
+import type { DailySummary, GameDocument, SessionDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
+import { buildLocationKey, listDocuments, requireAdmin } from './admin-helpers.js';
 
 /**
  * Dashboard data response.
@@ -18,6 +19,7 @@ export interface DashboardResponse {
     recentGames: Array<{
         gameId: string;
         uid: string;
+        sessionId: string;
         spreadType: number;
         question: string | null;
         topic: string | null;
@@ -25,7 +27,49 @@ export interface DashboardResponse {
         tone: string;
         turnCount: number;
         city: string | null;
+        country: string | null;
         createdAt: string;
+    }>;
+    users: Array<{
+        uid: string;
+        name: string | null;
+        gender: string | null;
+        birthdate: string | null;
+        language: string;
+        tone: string;
+        totalReadings: number;
+        totalFollowUps: number;
+        lastSeenAt: string;
+        lastCity: string | null;
+        lastCountry: string | null;
+        traits: Record<string, string>;
+        sessionIds: string[];
+        locationKeys: string[];
+        recentGameIds: string[];
+    }>;
+    sessions: Array<{
+        sessionId: string;
+        uid: string;
+        createdAt: string;
+        city: string | null;
+        country: string | null;
+        timezone: string | null;
+        device: string | null;
+        appVersion: string;
+        gameCount: number;
+        questionCount: number;
+        lastGameId: string | null;
+    }>;
+    locations: Array<{
+        key: string;
+        city: string | null;
+        country: string | null;
+        sessionCount: number;
+        gameCount: number;
+        userCount: number;
+        lastPlayedAt: string;
+        sampleGameIds: string[];
+        sampleUserIds: string[];
     }>;
     performance: {
         avgResponseMs: number;
@@ -43,9 +87,9 @@ export interface DashboardResponse {
  * Protected by ANALYTICS_KEY.
  */
 export async function handleDashboard(request: Request, env: Env): Promise<Response> {
-    const authKey = request.headers.get('X-Admin-Key');
-    if (authKey !== env.ANALYTICS_KEY) {
-        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    const unauthorized = requireAdmin(request, env);
+    if (unauthorized) {
+        return unauthorized;
     }
 
     const url = new URL(request.url);
@@ -83,6 +127,12 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         })();
 
+        const [allUsers, allSessions, allGames] = await Promise.all([
+            listDocuments<UserDocument>(env.R2, 'entities/users/'),
+            listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
+            listDocuments<GameDocument>(env.R2, 'entities/games/'),
+        ]);
+
         // Fetch recent games (last 20)
         const recentGamesPromise = (async () => {
             const games: DashboardResponse['recentGames'] = [];
@@ -100,7 +150,8 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                             const g = await gObj.json() as Record<string, unknown>;
                             games.push({
                                 gameId: g.gameId as string,
-                                uid: (g.uid as string)?.slice(0, 8) + '...',
+                                uid: g.uid as string,
+                                sessionId: g.sessionId as string,
                                 spreadType: g.spreadType as number,
                                 question: g.question as string | null,
                                 topic: g.topic as string | null,
@@ -108,6 +159,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                                 tone: g.tone as string,
                                 turnCount: g.turnCount as number,
                                 city: (g.location as { city?: string | null } | undefined)?.city ?? null,
+                                country: (g.location as { country?: string | null } | undefined)?.country ?? null,
                                 createdAt: g.createdAt as string,
                             });
                         } catch { /* skip malformed */ }
@@ -156,25 +208,17 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             };
         })();
 
-        // Count total users
-        const userCountPromise = (async () => {
-            const list = await env.R2.list({ prefix: 'entities/users/', limit: 1000 });
-            return list.objects.length;
-        })();
-
-        const [dailyResults, activeUsersToday, recentGames, performance, userCount] = await Promise.all([
+        const [dailyResults, activeUsersToday, recentGames, performance] = await Promise.all([
             Promise.all(dailyPromises),
             activeUsersPromise,
             recentGamesPromise,
             perfPromise,
-            userCountPromise,
         ]);
-
         const daily = dailyResults.filter((d): d is DailySummary => d !== null);
 
         // Aggregate totals
         const totals = {
-            users: userCount,
+            users: allUsers.length,
             readings: daily.reduce((s, d) => s + (d.readings ?? 0), 0),
             followUps: daily.reduce((s, d) => s + (d.followUps ?? 0), 0),
             sessions: daily.reduce((s, d) => s + (d.sessions ?? 0), 0),
@@ -191,6 +235,123 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .map(([language, count]) => ({ language, count }))
             .sort((a, b) => b.count - a.count);
 
+        const sessionsByUid = new Map<string, SessionDocument[]>();
+        for (const session of allSessions) {
+            const current = sessionsByUid.get(session.uid) ?? [];
+            current.push(session);
+            sessionsByUid.set(session.uid, current);
+        }
+
+        const gamesByUid = new Map<string, GameDocument[]>();
+        for (const game of allGames) {
+            const current = gamesByUid.get(game.uid) ?? [];
+            current.push(game);
+            gamesByUid.set(game.uid, current);
+        }
+
+        const users = allUsers
+            .map(user => {
+                const userSessions = (sessionsByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+                const userGames = (gamesByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+                const locationKeys = Array.from(new Set(
+                    userGames
+                        .filter(game => game.location?.city || game.location?.country)
+                        .map(game => buildLocationKey(game.location?.city ?? null, game.location?.country ?? null)),
+                ));
+                return {
+                    uid: user.uid,
+                    name: user.name,
+                    gender: user.gender,
+                    birthdate: user.birthdate,
+                    language: user.preferences.language,
+                    tone: user.preferences.tone,
+                    totalReadings: user.stats.totalReadings,
+                    totalFollowUps: user.stats.totalFollowUps,
+                    lastSeenAt: user.lastSeenAt,
+                    lastCity: user.locations.lastCity,
+                    lastCountry: user.locations.lastCountry,
+                    traits: user.traits,
+                    sessionIds: userSessions.map(session => session.sessionId),
+                    locationKeys,
+                    recentGameIds: userGames.slice(0, 5).map(game => game.gameId),
+                };
+            })
+            .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+
+        const sessions = allSessions
+            .map(session => {
+                const sessionGames = allGames
+                    .filter(game => game.sessionId === session.sessionId)
+                    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+                return {
+                    sessionId: session.sessionId,
+                    uid: session.uid,
+                    createdAt: session.createdAt,
+                    city: session.city,
+                    country: session.country,
+                    timezone: session.timezone,
+                    device: session.device,
+                    appVersion: session.appVersion,
+                    gameCount: sessionGames.length,
+                    questionCount: sessionGames.filter(game => !!game.question).length,
+                    lastGameId: sessionGames[0]?.gameId ?? null,
+                };
+            })
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+        const locationMap = new Map<string, DashboardResponse['locations'][number]>();
+        for (const game of allGames) {
+            const key = buildLocationKey(game.location?.city ?? null, game.location?.country ?? null);
+            if (!game.location?.city && !game.location?.country) {
+                continue;
+            }
+            const current = locationMap.get(key) ?? {
+                key,
+                city: game.location?.city ?? null,
+                country: game.location?.country ?? null,
+                sessionCount: 0,
+                gameCount: 0,
+                userCount: 0,
+                lastPlayedAt: game.createdAt,
+                sampleGameIds: [],
+                sampleUserIds: [],
+            };
+            current.gameCount += 1;
+            current.lastPlayedAt = current.lastPlayedAt > game.createdAt ? current.lastPlayedAt : game.createdAt;
+            if (current.sampleGameIds.length < 5 && !current.sampleGameIds.includes(game.gameId)) {
+                current.sampleGameIds.push(game.gameId);
+            }
+            if (!current.sampleUserIds.includes(game.uid)) {
+                current.sampleUserIds.push(game.uid);
+                current.userCount = current.sampleUserIds.length;
+            }
+            locationMap.set(key, current);
+        }
+        for (const session of allSessions) {
+            if (!session.city && !session.country) {
+                continue;
+            }
+            const key = buildLocationKey(session.city, session.country);
+            const current = locationMap.get(key);
+            if (!current) {
+                continue;
+            }
+            current.sessionCount += 1;
+            if (session.createdAt > current.lastPlayedAt) {
+                current.lastPlayedAt = session.createdAt;
+            }
+            if (!current.sampleUserIds.includes(session.uid)) {
+                current.sampleUserIds.push(session.uid);
+                current.userCount = current.sampleUserIds.length;
+            }
+        }
+        const locations = Array.from(locationMap.values())
+            .map(location => ({
+                ...location,
+                sampleUserIds: location.sampleUserIds.slice(0, 5),
+            }))
+            .sort((a, b) => b.lastPlayedAt.localeCompare(a.lastPlayedAt));
+
         // Import config for version info
         const { WORKER_CONFIG } = await import('../config.js');
 
@@ -200,6 +361,9 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             daily: daily.sort((a, b) => a.date.localeCompare(b.date)),
             topLanguages,
             recentGames,
+            users,
+            sessions,
+            locations,
             performance,
             activeUsersToday,
             schemaVersion: WORKER_CONFIG.schemaVersion,

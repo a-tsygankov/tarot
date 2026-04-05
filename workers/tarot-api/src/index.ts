@@ -7,7 +7,12 @@ import { handleEvent } from './handlers/event.js';
 import { handleVersion } from './handlers/version.js';
 import { handleExport } from './handlers/admin-export.js';
 import { handleDashboard } from './handlers/admin-dashboard.js';
-import { handleAdminUserDetail, handleAdminGameDetail } from './handlers/admin-users.js';
+import {
+    handleAdminGameDetail,
+    handleAdminLocationDetail,
+    handleAdminSessionDetail,
+    handleAdminUserDetail,
+} from './handlers/admin-users.js';
 import {
     handleSchemaActivate,
     handleSchemaRollback,
@@ -113,6 +118,12 @@ export default {
             } else if (path.startsWith('/api/admin/game/') && request.method === 'GET') {
                 const gameId = path.slice('/api/admin/game/'.length);
                 response = await handleAdminGameDetail(request, env, gameId);
+            } else if (path.startsWith('/api/admin/session/') && request.method === 'GET') {
+                const sessionId = path.slice('/api/admin/session/'.length);
+                response = await handleAdminSessionDetail(request, env, sessionId);
+            } else if (path.startsWith('/api/admin/location/') && request.method === 'GET') {
+                const locationKey = path.slice('/api/admin/location/'.length);
+                response = await handleAdminLocationDetail(request, env, locationKey);
             } else if (path === '/api/admin/export' && request.method === 'GET') {
                 response = await handleExport(request, env);
             } else if (path === '/api/admin/schema/activate' && request.method === 'POST') {

@@ -13,7 +13,7 @@ import './settings-panel.js';
 import './voice-mode.js';
 import './debug-console.js';
 import './star-background.js';
-import './dashboard-panel.js';
+import './dashboard-panel-lite.js';
 import type { DebugConsole } from './debug-console.js';
 
 export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard';
@@ -113,25 +113,32 @@ export class TarotApp extends LitElement {
                 grid-template-columns: 1fr auto 1fr;
                 align-items: center;
                 z-index: 50;
+                touch-action: manipulation;
             }
 
             .bar-left {
                 display: flex;
                 justify-content: flex-start;
+                touch-action: manipulation;
             }
 
             .bar-center {
                 display: flex;
                 justify-content: center;
+                touch-action: manipulation;
             }
 
             .bar-right {
                 display: flex;
                 justify-content: flex-end;
                 gap: 0.4em;
+                touch-action: manipulation;
             }
 
             .bar-logo {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4em;
                 font-family: var(--font-display);
                 color: var(--gold);
                 font-size: 1em;
@@ -141,6 +148,7 @@ export class TarotApp extends LitElement {
                 -webkit-user-select: none;
                 padding: 0.15em 0.3em;
                 transition: text-shadow 0.2s;
+                touch-action: manipulation;
             }
 
             .bar-logo:active {
@@ -185,6 +193,18 @@ export class TarotApp extends LitElement {
             .bar-star-main {
                 display: inline-block;
                 animation: star-spin 1.8s ease-in-out infinite;
+            }
+
+            .bar-star-cluster {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.1em;
+                min-width: 1.5em;
+                justify-content: center;
+            }
+
+            .bar-title {
+                line-height: 1;
             }
 
             .bar-star-sm {
@@ -275,6 +295,7 @@ export class TarotApp extends LitElement {
 
     private _tapCount = 0;
     private _tapTimer: ReturnType<typeof setTimeout> | null = null;
+    private _bottomBarLastTouchMs = 0;
 
     override render() {
         return html`
@@ -297,7 +318,7 @@ export class TarotApp extends LitElement {
                 </div>
             ` : nothing}
 
-            <div class="bottom-bar">
+            <div class="bottom-bar" @touchend=${this._preventBottomBarDoubleTapZoom}>
                 <div class="bar-left">
                     ${this._screen !== 'home' ? html`
                         <button class="btn btn-ghost" @click=${() => this.navigate('home')}>Home</button>
@@ -305,10 +326,12 @@ export class TarotApp extends LitElement {
                 </div>
                 <div class="bar-center">
                     <div class="bar-logo" @click=${this._onLogoTap}>
-                        ${this._isLoading ? html`<span class="bar-star bar-star-sm bar-star-1">&#10022;</span>` : nothing}
-                        <span class="bar-star ${this._isLoading ? 'bar-star-main' : ''}">&#10022;</span>
-                        Tarot
-                        ${this._isLoading ? html`<span class="bar-star bar-star-sm bar-star-2">&#10022;</span>` : nothing}
+                        <span class="bar-star-cluster" aria-hidden="true">
+                            ${this._isLoading ? html`<span class="bar-star bar-star-sm bar-star-1">&#10022;</span>` : nothing}
+                            <span class="bar-star ${this._isLoading ? 'bar-star-main' : ''}">&#10022;</span>
+                            ${this._isLoading ? html`<span class="bar-star bar-star-sm bar-star-2">&#10022;</span>` : nothing}
+                        </span>
+                        <span class="bar-title">Tarot</span>
                     </div>
                 </div>
                 <div class="bar-right">
@@ -443,6 +466,14 @@ export class TarotApp extends LitElement {
 
     private _toggleSettings(): void {
         this._settingsOpen = !this._settingsOpen;
+    }
+
+    private _preventBottomBarDoubleTapZoom(event: TouchEvent): void {
+        const now = Date.now();
+        if (now - this._bottomBarLastTouchMs < 350) {
+            event.preventDefault();
+        }
+        this._bottomBarLastTouchMs = now;
     }
 
     /**

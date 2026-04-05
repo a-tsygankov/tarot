@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import type { IProgressReporter } from '../../services/IProgressReporter.js';
@@ -113,7 +113,9 @@ export class CardSpread extends LitElement {
 
             .question-section {
                 width: 100%;
-                max-width: 320px;
+                max-width: 360px;
+                margin-top: 0.8em;
+                position: relative;
             }
 
             .question-input {
@@ -128,6 +130,7 @@ export class CardSpread extends LitElement {
                 resize: none;
                 outline: none;
                 transition: border-color 0.2s;
+                min-height: 5.2em;
             }
 
             .question-input:focus {
@@ -178,6 +181,58 @@ export class CardSpread extends LitElement {
                 gap: 0.8em;
             }
 
+            .question-toolbar {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 0.6em;
+                margin-bottom: 0.45em;
+            }
+
+            .question-label {
+                color: var(--text-dim);
+                font-size: 0.78em;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+
+            .question-tools {
+                display: flex;
+                align-items: center;
+                gap: 0.45em;
+            }
+
+            .mic-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 2.5em;
+                min-height: 2.5em;
+                border-radius: 999px;
+                border: 1px solid var(--border);
+                background: var(--bg-card);
+                color: var(--gold);
+                cursor: pointer;
+                transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+            }
+
+            .mic-btn:hover {
+                transform: translateY(-1px);
+                border-color: var(--gold-dim);
+            }
+
+            .mic-btn.listening {
+                background: rgba(201, 168, 76, 0.14);
+                border-color: var(--gold);
+                box-shadow: 0 0 0 5px rgba(201, 168, 76, 0.08);
+            }
+
+            .question-status {
+                color: var(--text-faint);
+                font-size: 0.75em;
+                min-height: 1.1em;
+            }
+
             /* Celtic cross layout: 3 rows */
             .cross-layout {
                 display: flex;
@@ -199,12 +254,18 @@ export class CardSpread extends LitElement {
     ];
 
     @property({ attribute: false }) services!: AppServices;
+    @query('.question-input') private _questionInput?: HTMLTextAreaElement;
 
     @state() private _dealtCards: Array<{ name: string; position: string; reversed: boolean }> = [];
     @state() private _question = '';
     @state() private _selectedTopic = '';
     @state() private _loading = false;
     @state() private _progressText = '';
+    @state() private _questionFocused = false;
+    @state() private _sttListening = false;
+    @state() private _sttStatus = '';
+
+    private _sttBaseQuestion = '';
 
     private get _spreadSize(): number {
         return this.services?.gameContext?.spreadType ?? 3;
@@ -221,6 +282,7 @@ export class CardSpread extends LitElement {
     override disconnectedCallback(): void {
         super.disconnectedCallback();
         void this.services?.audioCueService.stopOracleWaiting();
+        this.services?.sttService.stop();
     }
 
     override render() {
@@ -248,15 +310,40 @@ export class CardSpread extends LitElement {
                     </div>
                 ` : html`
                     <div class="question-section stack gap-sm">
+                        <div class="question-toolbar">
+                            <div class="question-label">Ask Your Question</div>
+                            <div class="question-tools">
+                                ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
+                                    <button
+                                        class="mic-btn ${this._sttListening ? 'listening' : ''}"
+                                        title=${this._sttListening ? 'Stop dictation' : 'Speak your question'}
+                                        @click=${this._toggleQuestionDictation}
+                                    >${this._sttListening ? '■' : '🎙'}</button>
+                                ` : ''}
+                            </div>
+                        </div>
                         <textarea
                             class="question-input"
                             rows="2"
                             placeholder="Ask a question (optional)..."
                             .value=${this._question}
+                            @focus=${() => {
+                                this._questionFocused = true;
+                                if (this.services.sttService.isAvailable() && !this._sttStatus) {
+                                    this._sttStatus = 'Tap the microphone to dictate your question.';
+                                }
+                            }}
+                            @blur=${() => {
+                                this._questionFocused = false;
+                                if (!this._sttListening && this._sttStatus === 'Tap the microphone to dictate your question.') {
+                                    this._sttStatus = '';
+                                }
+                            }}
                             @input=${(e: InputEvent) => {
                                 this._question = (e.target as HTMLTextAreaElement).value;
                             }}
                         ></textarea>
+                        <div class="question-status">${this._sttStatus}</div>
 
                         <div class="topic-chips">
                             ${(['Love', 'Career', 'Health', 'Spirit', 'Finance', 'Change'] as const).map(t => html`
@@ -421,6 +508,60 @@ export class CardSpread extends LitElement {
     private _pixelValue(value: string): number {
         const parsed = parseFloat(value);
         return Number.isFinite(parsed) ? parsed : 110;
+    }
+
+    private _toggleQuestionDictation(): void {
+        if (!this.services.sttService.isAvailable()) {
+            this._sttStatus = 'Speech input is not available in this browser.';
+            return;
+        }
+
+        if (this._sttListening) {
+            this.services.sttService.stop();
+            return;
+        }
+
+        const language = this.services.config.languages.find(
+            entry => entry.code === this.services.userContext.language,
+        )?.sttLang ?? 'en-US';
+
+        this._sttBaseQuestion = this._question.trim();
+        this._sttStatus = 'Listening...';
+
+        this.services.sttService.start(language, {
+            onStart: () => {
+                this._sttListening = true;
+            },
+            onInterim: (transcript) => {
+                const clean = transcript.trim();
+                this._question = this._mergeTranscript(clean);
+                this._sttStatus = clean ? `Listening: ${clean}` : 'Listening...';
+            },
+            onResult: (transcript) => {
+                const clean = transcript.trim();
+                this._question = this._mergeTranscript(clean);
+                this._sttStatus = clean ? 'Question captured.' : '';
+                this.updateComplete.then(() => this._questionInput?.focus());
+            },
+            onEnd: () => {
+                this._sttListening = false;
+                if (this._sttStatus === 'Listening...') {
+                    this._sttStatus = '';
+                }
+            },
+            onError: (error) => {
+                this._sttListening = false;
+                this._sttStatus = `Speech input error: ${error}`;
+            },
+        });
+    }
+
+    private _mergeTranscript(transcript: string): string {
+        if (!transcript) {
+            return this._sttBaseQuestion;
+        }
+
+        return [this._sttBaseQuestion, transcript].filter(Boolean).join(this._sttBaseQuestion ? ' ' : '');
     }
 }
 
