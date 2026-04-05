@@ -13,6 +13,26 @@ export interface ReadingExportInput {
     cards: ReadingExportCard[];
 }
 
+export interface ReadingImageLayoutPlan {
+    cardBlock: { x: number; y: number; width: number; height: number };
+    textColumnWidth: number;
+    spreadLines: string[];
+    spreadLineHeight: number;
+    watermarkUrl: string;
+    cardStage: {
+        width: number;
+        height: number;
+        cardWidth: number;
+        cardHeight: number;
+        spacing: number;
+        clusterWidth: number;
+        clusterStartX: number;
+        clusterY: number;
+        leftPadding: number;
+        rightPadding: number;
+    };
+}
+
 const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1350;
 const FRAME_MARGIN = 42;
@@ -31,8 +51,41 @@ const SPREAD_SECTION_MIN_HEIGHT = 180;
 const MAX_VISIBLE_CARDS = 5;
 const CARD_ASPECT_RATIO = 200 / 345;
 const WATERMARK_HEIGHT = 34;
+const CARD_STAGE_PADDING = 28;
+const CARD_STAGE_LABEL_HEIGHT = 54;
 
 export class ReadingImageExporter {
+    planLayout(input: ReadingExportInput, appUrl = this.resolveAppUrl()): ReadingImageLayoutPlan {
+        const measureCanvas = document.createElement('canvas');
+        const measureContext = measureCanvas.getContext('2d');
+        if (!measureContext) {
+            throw new Error('Canvas text context unavailable');
+        }
+
+        const cardColumnWidth = this.resolveCardColumnWidth(input);
+        const cardBlock = {
+            x: SAFE_LEFT,
+            y: HERO_TOP,
+            width: cardColumnWidth,
+            height: this.resolveCardBlockHeight(cardColumnWidth, input.cards.length),
+        };
+
+        return {
+            cardBlock,
+            textColumnWidth: CONTENT_WIDTH - cardColumnWidth - HERO_GAP,
+            spreadLines: this.wrapText(
+                measureContext,
+                this.buildSpreadSummary(input.cards),
+                CONTENT_WIDTH,
+                input.cards.length > 3 ? 3 : 6,
+                '600 23px Georgia, serif',
+            ),
+            spreadLineHeight: input.cards.length > 3 ? 28 : 31,
+            watermarkUrl: appUrl,
+            cardStage: this.resolveCardStage(cardBlock, input.cards.length),
+        };
+    }
+
     async exportBlob(input: ReadingExportInput): Promise<Blob | null> {
         const canvas = document.createElement('canvas');
         canvas.width = CANVAS_WIDTH;
@@ -46,14 +99,8 @@ export class ReadingImageExporter {
         this.paintFrame(context);
         this.paintHeader(context, input.title, input.subtitle);
 
-        const cardColumnWidth = this.resolveCardColumnWidth(input);
-        const textColumnWidth = CONTENT_WIDTH - cardColumnWidth - HERO_GAP;
-        const cardBlock = {
-            x: SAFE_LEFT,
-            y: HERO_TOP,
-            width: cardColumnWidth,
-            height: this.resolveCardBlockHeight(cardColumnWidth, input.cards.length),
-        };
+        const plan = this.planLayout(input);
+        const { cardBlock, textColumnWidth } = plan;
 
         const spreadTop = SAFE_BOTTOM - WATERMARK_HEIGHT - SPREAD_SECTION_MIN_HEIGHT;
         const textStartX = cardBlock.x + cardBlock.width + HERO_GAP;
@@ -72,37 +119,45 @@ export class ReadingImageExporter {
         const initialLines = besideLines.slice(0, besideCapacity);
         const remainingText = besideLines.slice(besideCapacity).join(' ');
 
-        await this.paintCardBlock(context, input.cards.slice(0, MAX_VISIBLE_CARDS), cardBlock);
+        await this.paintCardBlock(context, input.cards.slice(0, MAX_VISIBLE_CARDS), cardBlock, plan.cardStage);
         this.paintReadingLines(context, initialLines, textStartX, textTop, besideLineHeight);
 
         const remainingTop = Math.max(
             cardBlock.y + cardBlock.height + 34,
             textTop + initialLines.length * besideLineHeight + 22,
         );
-        const spreadSummaryLines = this.wrapText(
-            context,
-            this.buildSpreadSummary(input.cards),
-            CONTENT_WIDTH,
-            6,
-            '600 23px Georgia, serif',
-        );
-        const spreadHeight = this.measureTextHeight(spreadSummaryLines.length, 31) + 48;
+        const spreadSummaryLines = plan.spreadLines;
+        let spreadLineHeight = plan.spreadLineHeight;
+        let spreadHeight = this.measureTextHeight(spreadSummaryLines.length, spreadLineHeight) + 48;
         const spreadY = Math.max(spreadTop, SAFE_BOTTOM - WATERMARK_HEIGHT - spreadHeight);
 
         const remainingAreaHeight = Math.max(0, spreadY - remainingTop - 28);
         const fullWidthLines = remainingText
             ? this.wrapText(context, remainingText, CONTENT_WIDTH)
             : [];
-        const fullWidthLineHeight = 37;
+        let fullWidthLineHeight = 37;
         const fullWidthCapacity = Math.max(0, Math.floor(remainingAreaHeight / fullWidthLineHeight));
         const bodyLines = fullWidthLines.slice(0, fullWidthCapacity);
         if (fullWidthLines.length > fullWidthCapacity && bodyLines.length > 0) {
             bodyLines[bodyLines.length - 1] = this.withEllipsis(bodyLines[bodyLines.length - 1]);
         }
 
+        const usedBodyHeight = bodyLines.length * fullWidthLineHeight;
+        const usedSpreadHeight = this.measureTextHeight(spreadSummaryLines.length, spreadLineHeight) + 48;
+        const freeBottomSpace = Math.max(0, (SAFE_BOTTOM - WATERMARK_HEIGHT) - (remainingTop + usedBodyHeight + 28 + usedSpreadHeight));
+        if (freeBottomSpace > 22) {
+            const bodyRoom = bodyLines.length > 1 ? Math.min(8, Math.floor(freeBottomSpace / Math.max(bodyLines.length, 2))) : 0;
+            fullWidthLineHeight += bodyRoom;
+            const spreadRoom = spreadSummaryLines.length > 1 ? Math.min(5, Math.floor((freeBottomSpace - bodyRoom * bodyLines.length) / Math.max(spreadSummaryLines.length, 2))) : 0;
+            spreadLineHeight += Math.max(0, spreadRoom);
+            spreadHeight = this.measureTextHeight(spreadSummaryLines.length, spreadLineHeight) + 48;
+        }
+
+        const adjustedSpreadY = Math.max(spreadTop, SAFE_BOTTOM - WATERMARK_HEIGHT - spreadHeight);
+
         this.paintReadingLines(context, bodyLines, SAFE_LEFT, remainingTop, fullWidthLineHeight);
-        this.paintSpreadSection(context, spreadY, spreadSummaryLines);
-        this.paintWatermark(context, this.resolveAppUrl());
+        this.paintSpreadSection(context, adjustedSpreadY, spreadSummaryLines, spreadLineHeight);
+        this.paintWatermark(context, plan.watermarkUrl);
 
         return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     }
@@ -159,16 +214,10 @@ export class ReadingImageExporter {
         context: CanvasRenderingContext2D,
         cards: ReadingExportCard[],
         block: { x: number; y: number; width: number; height: number },
+        stage: ReadingImageLayoutPlan['cardStage'],
     ): Promise<void> {
         context.fillStyle = 'rgba(255,255,255,0.04)';
         context.fillRect(block.x, block.y, block.width, block.height);
-
-        const cardCount = Math.max(1, cards.length);
-        const cardWidth = Math.min(168, block.width / (cardCount <= 2 ? 2.1 : 2.8));
-        const cardHeight = cardWidth / CARD_ASPECT_RATIO;
-        const clusterWidth = Math.min(block.width - 52, cardWidth + (cardCount - 1) * (cardWidth * 0.56));
-        const clusterStartX = block.x + Math.max(26, (block.width - clusterWidth) / 2);
-        const clusterY = block.y + 30;
 
         for (let index = 0; index < cards.length; index += 1) {
             const card = cards[index];
@@ -177,22 +226,22 @@ export class ReadingImageExporter {
                 continue;
             }
             const image = await this.svgToImage(svg);
-            const x = clusterStartX + (index * cardWidth * 0.56);
-            const y = clusterY + (index % 2 === 0 ? 14 : 0);
+            const x = stage.clusterStartX + (index * stage.spacing);
+            const y = stage.clusterY + (index % 2 === 0 ? 14 : 0);
             const rotation = (index - (cards.length - 1) / 2) * 0.09;
 
             context.save();
-            context.translate(x + cardWidth / 2, y + cardHeight / 2);
+            context.translate(x + stage.cardWidth / 2, y + stage.cardHeight / 2);
             context.rotate(rotation);
             context.shadowColor = 'rgba(0, 0, 0, 0.34)';
             context.shadowBlur = 20;
-            context.drawImage(image, -cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
+            context.drawImage(image, -stage.cardWidth / 2, -stage.cardHeight / 2, stage.cardWidth, stage.cardHeight);
             context.restore();
         }
 
         context.fillStyle = '#d8bc74';
         context.font = '600 22px Georgia, serif';
-        context.fillText('Cards Drawn', block.x + 18, block.y + block.height - 24);
+        context.fillText('Cards Drawn', block.x + CARD_STAGE_PADDING, block.y + block.height - 22);
     }
 
     private paintReadingLines(
@@ -213,6 +262,7 @@ export class ReadingImageExporter {
         context: CanvasRenderingContext2D,
         top: number,
         lines: string[],
+        lineHeight: number,
     ): void {
         context.fillStyle = '#d8bc74';
         context.font = '600 25px Georgia, serif';
@@ -221,7 +271,7 @@ export class ReadingImageExporter {
         context.fillStyle = '#efe6d2';
         context.font = '600 23px Georgia, serif';
         lines.forEach((line, index) => {
-            context.fillText(line, SAFE_LEFT, top + 40 + (index * 31));
+            context.fillText(line, SAFE_LEFT, top + 40 + (index * lineHeight));
         });
     }
 
@@ -243,6 +293,12 @@ export class ReadingImageExporter {
 
         context.fillStyle = 'rgba(239, 230, 210, 0.82)';
         context.fillText(url, x + 16, y + 21);
+        context.strokeStyle = 'rgba(239, 230, 210, 0.52)';
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(x + 16, y + 25);
+        context.lineTo(x + 16 + textWidth, y + 25);
+        context.stroke();
         context.restore();
     }
 
@@ -260,7 +316,47 @@ export class ReadingImageExporter {
         return Math.round(base + Math.min(cardCount, 5) * 18);
     }
 
+    private resolveCardStage(
+        block: { x: number; y: number; width: number; height: number },
+        rawCardCount: number,
+    ): ReadingImageLayoutPlan['cardStage'] {
+        const cardCount = Math.max(1, Math.min(MAX_VISIBLE_CARDS, rawCardCount));
+        const stageWidth = block.width - CARD_STAGE_PADDING * 2;
+        const stageHeight = block.height - CARD_STAGE_PADDING - CARD_STAGE_LABEL_HEIGHT;
+        const cardWidth = Math.min(
+            168,
+            stageWidth / (cardCount <= 2 ? 2.35 : 3.4),
+            stageHeight * CARD_ASPECT_RATIO * 0.92,
+        );
+        const cardHeight = cardWidth / CARD_ASPECT_RATIO;
+        const maxSpacing = cardCount === 1 ? 0 : (stageWidth - cardWidth) / (cardCount - 1);
+        const preferredSpacing = cardWidth * 0.56;
+        const spacing = cardCount === 1 ? 0 : Math.min(preferredSpacing, maxSpacing);
+        const clusterWidth = cardCount === 1 ? cardWidth : cardWidth + (cardCount - 1) * spacing;
+        const clusterStartX = block.x + (block.width - clusterWidth) / 2;
+        const clusterY = block.y + CARD_STAGE_PADDING + Math.max(0, (stageHeight - cardHeight - 14) / 2);
+
+        return {
+            width: stageWidth,
+            height: stageHeight,
+            cardWidth,
+            cardHeight,
+            spacing,
+            clusterWidth,
+            clusterStartX,
+            clusterY,
+            leftPadding: clusterStartX - block.x,
+            rightPadding: (block.x + block.width) - (clusterStartX + clusterWidth),
+        };
+    }
+
     private buildSpreadSummary(cards: ReadingExportCard[]): string {
+        if (cards.length > 3) {
+            return cards
+                .map(card => `${card.position}: ${this.compactCardName(card.name)}${card.reversed ? ' (Rev)' : ''}`)
+                .join(' · ');
+        }
+
         return cards
             .map(card => `${card.position}: ${card.name}${card.reversed ? ' (Reversed)' : ''}`)
             .join(' · ');
@@ -311,6 +407,14 @@ export class ReadingImageExporter {
 
     private withEllipsis(line: string): string {
         return `${line.replace(/[. ]+$/, '')}...`;
+    }
+
+    private compactCardName(name: string): string {
+        const maxLength = 24;
+        if (name.length <= maxLength) {
+            return name;
+        }
+        return `${name.slice(0, maxLength - 3).trimEnd()}...`;
     }
 
     private async svgToImage(svg: string): Promise<HTMLImageElement> {
