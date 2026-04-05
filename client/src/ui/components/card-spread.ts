@@ -80,7 +80,7 @@ export class CardSpread extends LitElement {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                gap: 1.5em;
+                gap: 1.85em;
                 padding-top: 1em;
             }
 
@@ -114,7 +114,7 @@ export class CardSpread extends LitElement {
             .question-section {
                 width: 100%;
                 max-width: min(100%, 340px);
-                margin-top: 0.55em;
+                margin-top: 1.25em;
                 position: relative;
             }
 
@@ -176,7 +176,7 @@ export class CardSpread extends LitElement {
 
             .progress-section {
                 text-align: center;
-                margin-top: 1.15em;
+                margin-top: 1.8em;
             }
 
             .progress-text {
@@ -247,7 +247,7 @@ export class CardSpread extends LitElement {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                gap: 0.2em;
+                gap: 0.45em;
             }
 
             .cross-row {
@@ -311,7 +311,7 @@ export class CardSpread extends LitElement {
                 `}
 
                 ${this._dealtCards.length < this._spreadSize ? html`
-                    <div class="dim-text">Tap a card to draw</div>
+                    <div class="dim-text" style="margin-top:0.9em;">Tap a card to draw</div>
                 ` : this._loading ? html`
                     <div class="progress-section">
                         <div class="spinner spinner-lg"></div>

@@ -37,9 +37,9 @@ const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1350;
 const FRAME_MARGIN = 42;
 const FRAME_BORDER = 6;
-const FRAME_PADDING_X = 58;
+const FRAME_PADDING_X = 64;
 const FRAME_PADDING_TOP = 52;
-const FRAME_PADDING_BOTTOM = 54;
+const FRAME_PADDING_BOTTOM = 72;
 const SAFE_LEFT = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING_X;
 const SAFE_TOP = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING_TOP;
 const SAFE_RIGHT = CANVAS_WIDTH - FRAME_MARGIN - FRAME_BORDER - FRAME_PADDING_X;
@@ -233,6 +233,7 @@ export class ReadingImageExporter {
             context.save();
             context.translate(x + stage.cardWidth / 2, y + stage.cardHeight / 2);
             context.rotate(rotation);
+            this.paintCardMask(context, stage.cardWidth, stage.cardHeight);
             context.shadowColor = 'rgba(0, 0, 0, 0.34)';
             context.shadowBlur = 20;
             context.drawImage(image, -stage.cardWidth / 2, -stage.cardHeight / 2, stage.cardWidth, stage.cardHeight);
@@ -281,8 +282,8 @@ export class ReadingImageExporter {
         const textWidth = context.measureText(url).width;
         const stampWidth = textWidth + 32;
         const stampHeight = 32;
-        const x = SAFE_RIGHT - stampWidth;
-        const y = SAFE_BOTTOM - stampHeight + 6;
+        const x = SAFE_RIGHT - stampWidth - 8;
+        const y = SAFE_BOTTOM - stampHeight - 2;
 
         context.fillStyle = 'rgba(22, 11, 34, 0.94)';
         context.strokeStyle = 'rgba(225, 194, 113, 0.45)';
@@ -360,6 +361,28 @@ export class ReadingImageExporter {
         return cards
             .map(card => `${card.position}: ${card.name}${card.reversed ? ' (Reversed)' : ''}`)
             .join(' · ');
+    }
+
+    private paintCardMask(
+        context: CanvasRenderingContext2D,
+        cardWidth: number,
+        cardHeight: number,
+    ): void {
+        const bleed = 6;
+        const radius = 10;
+        context.fillStyle = '#241138';
+        context.strokeStyle = 'rgba(225, 194, 113, 0.18)';
+        context.lineWidth = 1;
+        this.roundRect(
+            context,
+            -cardWidth / 2 - bleed,
+            -cardHeight / 2 - bleed,
+            cardWidth + bleed * 2,
+            cardHeight + bleed * 2,
+            radius,
+        );
+        context.fill();
+        context.stroke();
     }
 
     private wrapText(
