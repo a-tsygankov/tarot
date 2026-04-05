@@ -56,7 +56,7 @@ export class ReadingDisplay extends LitElement {
             .card-reading-text {
                 color: var(--text);
                 line-height: 1.6;
-                font-size: 0.92em;
+                font-size: var(--font-reading-size, 0.92em);
             }
 
             .overall-section {
@@ -76,7 +76,7 @@ export class ReadingDisplay extends LitElement {
 
             .overall-text {
                 line-height: 1.7;
-                font-size: 0.95em;
+                font-size: var(--font-reading-size, 0.95em);
             }
 
             .actions-bar {

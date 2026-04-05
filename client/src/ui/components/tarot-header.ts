@@ -92,8 +92,7 @@ export class TarotHeader extends LitElement {
     }
 
     private _openSettings(): void {
-        this.dispatchEvent(new CustomEvent<AppScreen>('navigate', {
-            detail: 'settings',
+        this.dispatchEvent(new CustomEvent('toggle-settings', {
             bubbles: true,
             composed: true,
         }));

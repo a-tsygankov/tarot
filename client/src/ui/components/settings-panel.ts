@@ -9,8 +9,15 @@ const FONT_OPTIONS = [
     { id: 'Palatino', label: 'Palatino', family: "'Palatino Linotype', Palatino, Georgia, serif" },
     { id: 'Garamond', label: 'Garamond', family: "'EB Garamond', Garamond, serif" },
     { id: 'Cinzel', label: 'Cinzel', family: "Cinzel, serif" },
-    { id: 'Fraktur', label: 'Fraktur', family: "UnifrakturMaguntia, serif" },
+    { id: 'Helvetica', label: 'Helvetica', family: "Helvetica, 'Helvetica Neue', Arial, sans-serif" },
     { id: 'Philosopher', label: 'Philosopher', family: "Philosopher, serif" },
+] as const;
+
+const FONT_SIZE_OPTIONS = [
+    { id: 'small', label: 'S', value: '0.85em' },
+    { id: 'medium', label: 'M', value: '1em' },
+    { id: 'large', label: 'L', value: '1.15em' },
+    { id: 'xlarge', label: 'XL', value: '1.3em' },
 ] as const;
 
 const SPEED_OPTIONS = ['0.75×', '1×', '1.5×', '2×'] as const;
@@ -238,6 +245,7 @@ export class SettingsPanel extends LitElement {
     @state() private _font = 'Palatino';
     @state() private _deckStyle = 'classic';
     @state() private _italic = true;
+    @state() private _fontSize = 'medium';
 
     override connectedCallback(): void {
         super.connectedCallback();
@@ -251,6 +259,7 @@ export class SettingsPanel extends LitElement {
             this._font = localStorage.getItem('tarot-font') ?? 'Palatino';
             this._deckStyle = getCurrentDeckStyle();
             this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
+            this._fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
             // Determine voice from voiceId
             const lang = this.services.config.languages.find(l => l.code === this._language);
             if (lang?.voiceId) {
@@ -369,15 +378,24 @@ export class SettingsPanel extends LitElement {
                             </div>
                         `)}
                     </div>
-                    <div class="option-grid" style="margin-top: 0.5em;">
+                    <div style="display:flex; gap:0.5em; margin-top:0.5em; align-items:center;">
                         <button
                             class="option-btn ${this._italic ? 'selected' : ''}"
+                            style="flex:0 0 auto;"
                             @click=${() => this._setItalic(!this._italic)}
                         ><em>Italic</em></button>
+                        <span style="color:var(--text-dim);font-size:0.75em;margin-left:0.3em;">Size:</span>
+                        ${FONT_SIZE_OPTIONS.map(s => html`
+                            <button
+                                class="option-btn ${this._fontSize === s.id ? 'selected' : ''}"
+                                style="flex:0 0 auto; min-width:36px; padding:0.4em 0.5em; font-size:0.8em;"
+                                @click=${() => this._setFontSize(s.id)}
+                            >${s.label}</button>
+                        `)}
                     </div>
                     <div class="font-preview">
                         <div class="font-preview-label">preview:</div>
-                        <div class="font-preview-text" style="font-family: ${this._currentFontFamily}; font-style: ${this._italic ? 'italic' : 'normal'}">
+                        <div class="font-preview-text" style="font-family: ${this._currentFontFamily}; font-style: ${this._italic ? 'italic' : 'normal'}; font-size: ${this._currentFontSize}">
                             The cards whisper of change and transformation…
                         </div>
                     </div>
@@ -415,11 +433,16 @@ export class SettingsPanel extends LitElement {
         return FONT_OPTIONS.find(f => f.id === this._font)?.family ?? FONT_OPTIONS[0].family;
     }
 
+    private get _currentFontSize(): string {
+        return FONT_SIZE_OPTIONS.find(s => s.id === this._fontSize)?.value ?? '1em';
+    }
+
     private _setLanguage(code: string): void {
         this._language = code;
         if (this.services) {
             this.services.userContext.language = code;
             this.services.userContext.save();
+            this.dispatchEvent(new CustomEvent('language-changed', { bubbles: true, composed: true }));
         }
     }
 
@@ -428,6 +451,7 @@ export class SettingsPanel extends LitElement {
         if (this.services) {
             this.services.userContext.tone = tone;
             this.services.userContext.save();
+            this.dispatchEvent(new CustomEvent('tone-changed', { bubbles: true, composed: true }));
         }
     }
 
@@ -470,6 +494,13 @@ export class SettingsPanel extends LitElement {
         this._italic = italic;
         localStorage.setItem('tarot-italic', String(italic));
         document.documentElement.style.setProperty('--font-reading-style', italic ? 'italic' : 'normal');
+    }
+
+    private _setFontSize(sizeId: string): void {
+        this._fontSize = sizeId;
+        localStorage.setItem('tarot-font-size', sizeId);
+        const value = FONT_SIZE_OPTIONS.find(s => s.id === sizeId)?.value ?? '1em';
+        document.documentElement.style.setProperty('--font-reading-size', value);
     }
 
     private async _setDeckStyle(styleId: string): Promise<void> {

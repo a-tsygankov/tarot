@@ -129,6 +129,15 @@ export class UserContext implements IUserContext {
         this.save();
     }
 
+    /** Client IP address (populated from GeoService after IP geo fetch) */
+    ip: string | null = null;
+
+    /** City-level location from CF IP geo (more precise than timezone) */
+    ipCity: string | null = null;
+
+    /** Country from CF IP geo */
+    ipCountry: string | null = null;
+
     /** Serialize for API requests. */
     toApiPayload() {
         return {
@@ -141,6 +150,9 @@ export class UserContext implements IUserContext {
             traits: this.traits,
             language: this.language,
             tone: this.tone,
+            ip: this.ip,
+            ipCity: this.ipCity,
+            ipCountry: this.ipCountry,
         };
     }
 

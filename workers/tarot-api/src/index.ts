@@ -86,6 +86,17 @@ export default {
                 response = await handleEvent(request, env);
             } else if (path === '/api/meta/version' && request.method === 'GET') {
                 response = await handleVersion(request, env);
+            } else if (path === '/api/geo' && request.method === 'GET') {
+                const cfData = (request as unknown as { cf?: Record<string, unknown> }).cf;
+                response = Response.json({
+                    ip: request.headers.get('CF-Connecting-IP') ?? null,
+                    country: request.headers.get('cf-ipcountry') ?? null,
+                    city: (cfData?.city as string) ?? null,
+                    region: (cfData?.region as string) ?? null,
+                    timezone: (cfData?.timezone as string) ?? null,
+                    latitude: (cfData?.latitude as string) ?? null,
+                    longitude: (cfData?.longitude as string) ?? null,
+                });
             } else if (path === '/api/health' && request.method === 'GET') {
                 response = Response.json({ status: 'ok' });
             // ── Admin routes (X-Admin-Key protected) ──

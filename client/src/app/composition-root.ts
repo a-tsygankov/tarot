@@ -51,7 +51,9 @@ export function createAppServices(): AppServices {
     const compatibilityService = new CompatibilityService(apiService, CONFIG.version);
 
     // Geo (passive, no permission needed)
-    const geoService = new GeoService();
+    const geoService = new GeoService(CONFIG.apiBase);
+    // Kick off async IP geo fetch (non-blocking)
+    geoService.fetchIpGeo().catch(() => {});
 
     return {
         config: CONFIG,

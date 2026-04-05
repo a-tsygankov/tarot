@@ -16,7 +16,7 @@ import './star-background.js';
 import './dashboard-panel.js';
 import type { DebugConsole } from './debug-console.js';
 
-export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'settings' | 'voice' | 'dashboard';
+export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard';
 
 /**
  * Root application shell — manages screen navigation and services.
@@ -215,6 +215,38 @@ export class TarotApp extends LitElement {
                 50% { transform: rotate(-180deg) scale(1.3); opacity: 1; text-shadow: 0 0 8px rgba(201, 168, 76, 0.5); }
                 100% { transform: rotate(-360deg) scale(1); opacity: 0.5; }
             }
+
+            /* ── Settings / Console overlay ── */
+            .overlay-backdrop {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 90;
+                animation: fadeIn 0.15s ease-out;
+            }
+
+            .settings-overlay {
+                position: fixed;
+                bottom: 48px;
+                left: 0;
+                right: 0;
+                max-height: 75vh;
+                max-width: 480px;
+                margin: 0 auto;
+                background: var(--bg-deep, #0d0a1a);
+                border: 1px solid var(--border);
+                border-bottom: none;
+                border-radius: 14px 14px 0 0;
+                z-index: 100;
+                overflow-y: auto;
+                padding: 1em;
+                animation: slideUp 0.2s ease-out;
+            }
+
+            @keyframes slideUp {
+                from { transform: translateY(30px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
         `,
     ];
 
@@ -223,6 +255,7 @@ export class TarotApp extends LitElement {
     @state() private _screen: AppScreen = 'home';
     @state() private _debugMode = false;
     @state() private _isLoading = false;
+    @state() private _settingsOpen = false;
 
     @query('debug-console') private _debugConsole!: DebugConsole;
 
@@ -249,6 +282,19 @@ export class TarotApp extends LitElement {
             <div class="screen">
                 ${this._renderScreen()}
             </div>
+
+            <!-- Settings overlay -->
+            ${this._settingsOpen ? html`
+                <div class="overlay-backdrop" @click=${this._toggleSettings}></div>
+                <div class="settings-overlay">
+                    <settings-panel
+                        .services=${this._services}
+                        @close=${this._toggleSettings}
+                        @language-changed=${this._onLanguageOrToneChanged}
+                        @tone-changed=${this._onLanguageOrToneChanged}
+                    ></settings-panel>
+                </div>
+            ` : nothing}
 
             <div class="bottom-bar">
                 <div class="bar-left">
@@ -278,7 +324,7 @@ export class TarotApp extends LitElement {
                            target="_blank"
                            rel="noopener">☕</a>
                     `}
-                    <button class="btn btn-ghost" @click=${() => this.navigate('settings')}
+                    <button class="btn btn-ghost" @click=${this._toggleSettings}
                         style="font-size: 1.1em; padding: 0.15em 0.3em;">⚙</button>
                 </div>
             </div>
@@ -315,13 +361,6 @@ export class TarotApp extends LitElement {
                         @back=${() => this.navigate('reading')}
                         @loading=${(e: CustomEvent) => { this._isLoading = e.detail; }}
                     ></followup-chat>
-                `;
-            case 'settings':
-                return html`
-                    <settings-panel
-                        .services=${this._services}
-                        @close=${() => this.navigate('home')}
-                    ></settings-panel>
                 `;
             case 'voice':
                 return html`
@@ -398,6 +437,35 @@ export class TarotApp extends LitElement {
 
     private _toggleConsole(): void {
         this._debugConsole?.toggle();
+    }
+
+    private _toggleSettings(): void {
+        this._settingsOpen = !this._settingsOpen;
+    }
+
+    /**
+     * When language or tone changes mid-game, re-request the reading
+     * so card descriptions and predictions update to the new language/tone.
+     */
+    private async _onLanguageOrToneChanged(): Promise<void> {
+        const game = this._services?.gameContext;
+        if (!game?.reading) return; // no reading to re-request
+
+        this._isLoading = true;
+        try {
+            const response = await this._services.apiService.fetchReadingAsync(game, {});
+            game.applyReading(response);
+            if (response.userContextDelta) {
+                this._services.userContext.applyAiUpdate(response.userContextDelta);
+            }
+            // Force re-render of current screen
+            this._screen = this._screen;
+            this.requestUpdate();
+        } catch (err) {
+            console.error('Re-request reading failed:', err instanceof Error ? err.message : err);
+        } finally {
+            this._isLoading = false;
+        }
     }
 }
 

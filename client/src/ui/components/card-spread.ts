@@ -25,6 +25,50 @@ const POSITION_LABELS: Record<number, string[]> = {
     5: ['Core', 'Challenge', 'Past', 'Future', 'Guidance'],
 };
 
+interface CardLayout {
+    width: string;
+    height: string;
+    tilt: number; // degrees
+    offsetY: number; // px, vertical offset
+}
+
+interface SpreadLayout {
+    cards: CardLayout[];
+    gap: string;
+    wrapStyle?: string; // additional CSS for the cards-row container
+}
+
+const SPREAD_LAYOUTS: Record<number, SpreadLayout> = {
+    1: {
+        gap: '0',
+        cards: [
+            { width: '130px', height: '212px', tilt: 0, offsetY: 0 },
+        ],
+    },
+    3: {
+        gap: '0.6em',
+        cards: [
+            { width: '110px', height: '180px', tilt: -15, offsetY: 8 },
+            { width: '120px', height: '196px', tilt: 0, offsetY: 0 },
+            { width: '110px', height: '180px', tilt: 15, offsetY: 8 },
+        ],
+    },
+    5: {
+        gap: '0.3em',
+        wrapStyle: 'flex-wrap: wrap; max-width: 300px;',
+        cards: [
+            // Row 1: center
+            { width: '80px', height: '130px', tilt: 0, offsetY: 0 },
+            // Row 2: left, center, right
+            { width: '80px', height: '130px', tilt: -5, offsetY: 0 },
+            { width: '80px', height: '130px', tilt: 0, offsetY: -12 },
+            { width: '80px', height: '130px', tilt: 5, offsetY: 0 },
+            // Row 3: center
+            { width: '80px', height: '130px', tilt: 0, offsetY: 0 },
+        ],
+    },
+};
+
 /**
  * Card spread screen — deal cards, ask optional question, fetch reading.
  */
@@ -49,8 +93,8 @@ export class CardSpread extends LitElement {
             }
 
             .card-slot {
-                width: 80px;
-                height: 130px;
+                width: var(--card-w, 80px);
+                height: var(--card-h, 130px);
                 border: 2px dashed var(--border);
                 border-radius: 8px;
                 display: flex;
@@ -206,6 +250,20 @@ export class CardSpread extends LitElement {
                 display: flex;
                 gap: 0.8em;
             }
+
+            /* Celtic cross layout: 3 rows */
+            .cross-layout {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.2em;
+            }
+
+            .cross-row {
+                display: flex;
+                gap: 0.3em;
+                justify-content: center;
+            }
         `,
     ];
 
@@ -225,16 +283,25 @@ export class CardSpread extends LitElement {
         return POSITION_LABELS[this._spreadSize] ?? POSITION_LABELS[3];
     }
 
+    private get _layout(): SpreadLayout {
+        return SPREAD_LAYOUTS[this._spreadSize] ?? SPREAD_LAYOUTS[3];
+    }
+
     override render() {
+        const layout = this._layout;
+        const rowStyle = `gap: ${layout.gap}; ${layout.wrapStyle ?? ''}`;
+
         return html`
             <div class="spread-container">
                 <div class="display-text" style="font-size:1.1em;">
                     ${this._spreadSize}-Card Spread
                 </div>
 
-                <div class="cards-row">
-                    ${this._positions.map((pos, i) => this._renderCardSlot(pos, i))}
-                </div>
+                ${this._spreadSize === 5 ? this._renderCrossLayout() : html`
+                    <div class="cards-row" style=${rowStyle}>
+                        ${this._positions.map((pos, i) => this._renderCardSlot(pos, i))}
+                    </div>
+                `}
 
                 ${this._dealtCards.length < this._spreadSize ? html`
                     <div class="dim-text">Tap a card to draw</div>
@@ -275,12 +342,38 @@ export class CardSpread extends LitElement {
         `;
     }
 
+    private _renderCrossLayout() {
+        const positions = this._positions;
+        // Row 1: card 0 (Core) centered
+        // Row 2: cards 1 (Challenge), 2 (Past), 3 (Future) in a row
+        // Row 3: card 4 (Guidance) centered
+        return html`
+            <div class="cross-layout">
+                <div class="cross-row">
+                    ${this._renderCardSlot(positions[0], 0)}
+                </div>
+                <div class="cross-row">
+                    ${this._renderCardSlot(positions[1], 1)}
+                    ${this._renderCardSlot(positions[2], 2)}
+                    ${this._renderCardSlot(positions[3], 3)}
+                </div>
+                <div class="cross-row">
+                    ${this._renderCardSlot(positions[4], 4)}
+                </div>
+            </div>
+        `;
+    }
+
     private _renderCardSlot(position: string, index: number) {
+        const layout = this._layout;
+        const cardLayout = layout.cards[index] ?? layout.cards[0];
+        const slotStyle = `--card-w: ${cardLayout.width}; --card-h: ${cardLayout.height}; transform: rotate(${cardLayout.tilt}deg) translateY(${cardLayout.offsetY}px);`;
+
         const card = this._dealtCards[index];
         if (card) {
             const art = getCardArt(card.name, 200, 345);
             return html`
-                <div class="card-slot dealt">
+                <div class="card-slot dealt" style=${slotStyle}>
                     <div class="card-face card-front ${art ? '' : 'text-only'}">
                         ${art ? unsafeHTML(art) : html`
                             <div class="card-name">${card.name}</div>
@@ -297,7 +390,7 @@ export class CardSpread extends LitElement {
         return html`
             <div
                 class="card-slot"
-                style="opacity: ${canDeal ? 1 : 0.4}"
+                style="${slotStyle} opacity: ${canDeal ? 1 : 0.4}"
                 @click=${canDeal ? () => this._dealCard(position) : undefined}
             >
                 <div class="card-face card-back">${unsafeHTML(backArt)}</div>
