@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
-import { getCardArt } from './card-art-registry.js';
+import { ReadingImageExporter } from '../../services/Export/ReadingImageExporter.js';
 import './tarot-card.js';
 
 /**
@@ -181,6 +181,7 @@ export class ReadingDisplay extends LitElement {
 
     private _overallActionsTimer: ReturnType<typeof setTimeout> | null = null;
     private _copyTooltipTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly _readingImageExporter = new ReadingImageExporter();
 
     private get _game() {
         return this.services?.gameContext;
@@ -381,7 +382,16 @@ export class ReadingDisplay extends LitElement {
         }
 
         try {
-            const blob = await this.buildReadingImageBlob();
+            const blob = await this._readingImageExporter.exportBlob({
+                title: 'Tarot Oracle',
+                subtitle: 'Overall Reading',
+                overallReading: String(reading.overall),
+                cards: (game.cards ?? []).map(card => ({
+                    name: card.name,
+                    position: card.position,
+                    reversed: card.reversed,
+                })),
+            });
             if (!blob) {
                 return;
             }
@@ -409,153 +419,6 @@ export class ReadingDisplay extends LitElement {
         } catch (error) {
             console.error('Reading image export failed:', error);
         }
-    }
-
-    private async buildReadingImageBlob(): Promise<Blob | null> {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1080;
-        canvas.height = 1350;
-        const context = canvas.getContext('2d');
-        if (!context) {
-            return null;
-        }
-
-        const game = this._game!;
-        const reading = game.reading as any;
-        const cards = (game.cards ?? []).slice(0, 5);
-        const overallText = String(reading?.overall ?? '');
-
-        const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, '#110a1f');
-        gradient.addColorStop(0.55, '#2a153d');
-        gradient.addColorStop(1, '#1b112e');
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        context.fillStyle = 'rgba(255, 255, 255, 0.03)';
-        for (let i = 0; i < 18; i += 1) {
-            context.beginPath();
-            context.arc(80 + ((i * 59) % 980), 70 + ((i * 91) % 1200), 1.5 + (i % 3), 0, Math.PI * 2);
-            context.fill();
-        }
-
-        context.fillStyle = '#d8bc74';
-        context.font = '700 48px Georgia, serif';
-        context.fillText('Tarot Oracle', 74, 86);
-        context.fillStyle = '#efe7d3';
-        context.font = '400 25px Georgia, serif';
-        context.fillText('Overall Reading', 74, 126);
-
-        const cardAreaX = 72;
-        const cardAreaY = 170;
-        const cardAreaWidth = 360;
-        const cardAreaHeight = 320;
-
-        context.fillStyle = 'rgba(255,255,255,0.04)';
-        context.fillRect(cardAreaX, cardAreaY, cardAreaWidth, cardAreaHeight);
-
-        const miniCards = cards.slice(0, 3);
-        await Promise.all(miniCards.map(async (card, index) => {
-            const art = getCardArt(card.name, 220, 380);
-            if (!art) {
-                return;
-            }
-            const image = await this.svgToImage(art);
-            const width = 92;
-            const height = 158;
-            const x = cardAreaX + 20 + (index * 92);
-            const y = cardAreaY + 26 + (index === 1 ? 0 : 14);
-            context.save();
-            context.translate(x + width / 2, y + height / 2);
-            context.rotate((index - 1) * 0.12);
-            context.shadowColor = 'rgba(0, 0, 0, 0.28)';
-            context.shadowBlur = 18;
-            context.drawImage(image, -width / 2, -height / 2, width, height);
-            context.restore();
-        }));
-
-        context.fillStyle = '#d8bc74';
-        context.font = '600 22px Georgia, serif';
-        context.fillText('Cards Drawn', cardAreaX + 20, cardAreaY + cardAreaHeight - 26);
-
-        const textX = 470;
-        const textY = 174;
-        const textWidth = 536;
-        let cursorY = textY;
-
-        context.fillStyle = '#efe7d3';
-        context.font = '400 34px Georgia, serif';
-        const wrapped = this.wrapText(context, overallText, textWidth, 18);
-        wrapped.forEach((line) => {
-            context.fillText(line, textX, cursorY);
-            cursorY += 44;
-        });
-
-        cursorY = Math.max(cursorY + 10, cardAreaY + 44);
-        context.font = '600 24px Georgia, serif';
-        context.fillStyle = '#d8bc74';
-        context.fillText('Spread', 74, 570);
-        context.font = '400 23px Georgia, serif';
-        context.fillStyle = '#efe7d3';
-        const spreadSummary = cards.map(card => `${card.position}: ${card.name}${card.reversed ? ' (Reversed)' : ''}`);
-        const spreadLines = this.wrapText(context, spreadSummary.join(' · '), 930, 3);
-        spreadLines.forEach((line, index) => {
-            context.fillText(line, 74, 612 + (index * 32));
-        });
-
-        return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-    }
-
-    private wrapText(
-        context: CanvasRenderingContext2D,
-        text: string,
-        maxWidth: number,
-        maxLines: number,
-    ): string[] {
-        const words = text.split(/\s+/).filter(Boolean);
-        const lines: string[] = [];
-        let current = '';
-
-        for (const word of words) {
-            const next = current ? `${current} ${word}` : word;
-            if (context.measureText(next).width <= maxWidth) {
-                current = next;
-                continue;
-            }
-
-            lines.push(current);
-            current = word;
-            if (lines.length === maxLines) {
-                break;
-            }
-        }
-
-        if (lines.length < maxLines && current) {
-            lines.push(current);
-        }
-
-        if (lines.length === maxLines && words.length > 0) {
-            const last = lines[maxLines - 1] ?? '';
-            if (!text.endsWith(last)) {
-                lines[maxLines - 1] = `${last.replace(/[. ]+$/, '')}...`;
-            }
-        }
-
-        return lines;
-    }
-
-    private async svgToImage(svg: string): Promise<HTMLImageElement> {
-        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const image = new Image();
-        image.decoding = 'async';
-        await new Promise<void>((resolve, reject) => {
-            image.onload = () => resolve();
-            image.onerror = () => reject(new Error('Failed to load card art'));
-            image.src = url;
-        });
-        URL.revokeObjectURL(url);
-        return image;
     }
 
     private resetOverallActionsTimer(): void {
