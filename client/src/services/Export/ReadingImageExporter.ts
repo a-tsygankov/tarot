@@ -314,7 +314,7 @@ export class ReadingImageExporter {
 
     private resolveCardBlockHeight(cardColumnWidth: number, cardCount: number): number {
         const base = Math.max(250, cardColumnWidth * 0.68);
-        return Math.round(base + Math.min(cardCount, 5) * 18);
+        return Math.round(base + 18 + Math.min(cardCount, 5) * 18);
     }
 
     private resolveCardStage(

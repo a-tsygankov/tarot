@@ -91,6 +91,10 @@ export class CardSpread extends LitElement {
                 flex-wrap: wrap;
             }
 
+            .cards-row.three-card {
+                margin-bottom: 1.25em;
+            }
+
             .card-slot {
                 width: var(--card-w, 80px);
                 min-height: var(--card-h, 130px);
@@ -114,13 +118,17 @@ export class CardSpread extends LitElement {
             .question-section {
                 width: 100%;
                 max-width: min(100%, 340px);
-                margin-top: 1.25em;
+                margin-top: 1.65em;
+                position: relative;
+            }
+
+            .question-input-wrap {
                 position: relative;
             }
 
             .question-input {
                 width: 100%;
-                padding: 0.7em 0.8em;
+                padding: 0.7em 3.2em 0.7em 0.8em;
                 background: var(--bg-card);
                 border: 1px solid var(--border);
                 border-radius: 8px;
@@ -134,15 +142,12 @@ export class CardSpread extends LitElement {
                 max-height: 7.8em;
                 overflow: hidden;
                 line-height: 1.35;
+                white-space: nowrap;
             }
 
             .question-input:focus {
                 border-color: var(--gold-dim);
                 box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.08);
-            }
-
-            .question-input.expanded {
-                min-height: 4.9em;
             }
 
             .question-input::placeholder {
@@ -190,43 +195,34 @@ export class CardSpread extends LitElement {
                 gap: 0.8em;
             }
 
-            .question-toolbar {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 0.6em;
-                margin-bottom: 0.35em;
-            }
-
             .question-label {
                 color: var(--text-dim);
                 font-size: 0.78em;
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
-            }
-
-            .question-tools {
-                display: flex;
-                align-items: center;
-                gap: 0.45em;
+                margin-bottom: 0.35em;
             }
 
             .mic-btn {
-                display: inline-flex;
+                display: flex;
                 align-items: center;
                 justify-content: center;
-                min-width: 2.5em;
-                min-height: 2.5em;
+                width: 2.25em;
+                height: 2.25em;
                 border-radius: 999px;
                 border: 1px solid var(--border);
-                background: var(--bg-card);
+                background: rgba(15, 9, 26, 0.88);
                 color: var(--gold);
                 cursor: pointer;
                 transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+                position: absolute;
+                top: 50%;
+                right: 0.45em;
+                transform: translateY(-50%);
             }
 
             .mic-btn:hover {
-                transform: translateY(-1px);
+                transform: translateY(-50%) translateY(-1px);
                 border-color: var(--gold-dim);
             }
 
@@ -305,7 +301,7 @@ export class CardSpread extends LitElement {
                 </div>
 
                 ${this._spreadSize === 5 ? this._renderCrossLayout() : html`
-                    <div class="cards-row" style=${rowStyle}>
+                    <div class="cards-row ${this._spreadSize === 3 ? 'three-card' : ''}" style=${rowStyle}>
                         ${this._positions.map((pos, i) => this._renderCardSlot(pos, i))}
                     </div>
                 `}
@@ -319,20 +315,10 @@ export class CardSpread extends LitElement {
                     </div>
                 ` : html`
                     <div class="question-section stack gap-sm">
-                        <div class="question-toolbar">
-                            <div class="question-label">Ask Your Question</div>
-                            <div class="question-tools">
-                                ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
-                                    <button
-                                        class="mic-btn ${this._sttListening ? 'listening' : ''}"
-                                        title=${this._sttListening ? 'Stop dictation' : 'Speak your question'}
-                                        @click=${this._toggleQuestionDictation}
-                                    >${this._sttListening ? '■' : '🎙'}</button>
-                                ` : ''}
-                            </div>
-                        </div>
+                        <div class="question-label">Ask Your Question</div>
+                        <div class="question-input-wrap">
                         <textarea
-                            class="question-input ${this._questionFocused || this._question.trim() || this._sttListening ? 'expanded' : ''}"
+                            class="question-input"
                             rows="1"
                             placeholder="Ask a question (optional)..."
                             .value=${this._question}
@@ -355,6 +341,14 @@ export class CardSpread extends LitElement {
                                 this._resizeQuestionInput();
                             }}
                         ></textarea>
+                        ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
+                            <button
+                                class="mic-btn ${this._sttListening ? 'listening' : ''}"
+                                title=${this._sttListening ? 'Stop dictation' : 'Speak your question'}
+                                @click=${this._toggleQuestionDictation}
+                            >${this._sttListening ? '■' : '🎙'}</button>
+                        ` : ''}
+                        </div>
                         <div class="question-status">${this._sttStatus}</div>
 
                         <div class="topic-chips">
@@ -589,11 +583,7 @@ export class CardSpread extends LitElement {
 
         input.style.height = 'auto';
         const compactHeight = 44;
-        const expandedHeight = Math.min(input.scrollHeight, 124);
-        const targetHeight = this._questionFocused || this._question.trim() || this._sttListening
-            ? Math.max(expandedHeight, 78)
-            : compactHeight;
-        input.style.height = `${targetHeight}px`;
+        input.style.height = `${compactHeight}px`;
     }
 }
 
