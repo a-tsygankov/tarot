@@ -21,7 +21,21 @@ async function init() {
     const italic = localStorage.getItem('tarot-italic') ?? 'true';
     document.documentElement.style.setProperty('--font-reading-style', italic === 'true' ? 'italic' : 'normal');
 
+    // Restore font size preference
+    const fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
+    const fontSizeMap: Record<string, string> = { small: '0.85em', medium: '1em', large: '1.15em', xlarge: '1.3em' };
+    document.documentElement.style.setProperty('--font-reading-size', fontSizeMap[fontSize] ?? '1em');
+
     const services = createAppServices();
+
+    // Populate UserContext with IP geo data when available (non-blocking)
+    services.geoService.fetchIpGeo().then(geo => {
+        if (geo) {
+            services.userContext.ip = geo.ip;
+            services.userContext.ipCity = geo.city;
+            services.userContext.ipCountry = geo.country;
+        }
+    }).catch(() => {});
 
     // Log session start (fire-and-forget)
     services.apiService.logSessionAsync();

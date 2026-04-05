@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
+import './tarot-card.js';
 
 /**
  * Displays the AI reading — card-by-card + overall summary.
@@ -25,6 +26,10 @@ export class ReadingDisplay extends LitElement {
                 border: 1px solid var(--border);
                 border-radius: 10px;
                 animation: fadeIn 0.5s ease-out both;
+            }
+
+            .card-reading-body {
+                display: block;
             }
 
             .card-reading:nth-child(2) { animation-delay: 0.1s; }
@@ -56,7 +61,19 @@ export class ReadingDisplay extends LitElement {
             .card-reading-text {
                 color: var(--text);
                 line-height: 1.6;
-                font-size: 0.92em;
+                font-size: var(--font-reading-size, 0.92em);
+            }
+
+            .insight-card {
+                float: inline-start;
+                margin: 0.15em 0.85em 0.45em 0;
+                shape-margin: 0.6em;
+            }
+
+            .card-reading::after {
+                content: '';
+                display: block;
+                clear: both;
             }
 
             .overall-section {
@@ -76,7 +93,7 @@ export class ReadingDisplay extends LitElement {
 
             .overall-text {
                 line-height: 1.7;
-                font-size: 0.95em;
+                font-size: var(--font-reading-size, 0.95em);
             }
 
             .actions-bar {
@@ -96,6 +113,7 @@ export class ReadingDisplay extends LitElement {
     ];
 
     @property({ attribute: false }) services!: AppServices;
+    @property({ type: Number }) version = 0;
 
     @state() private _speaking = false;
     @state() private _ttsStatus = '';
@@ -118,18 +136,36 @@ export class ReadingDisplay extends LitElement {
             reading: string;
         }> ?? [];
         const overall = (reading as any).overall as string ?? '';
+        const dealtCards = this._game.cards ?? [];
 
         return html`
             <div class="reading-container">
-                ${cards.map(card => html`
+                ${cards.map((card, index) => {
+                    const dealt = dealtCards[index];
+                    return html`
                     <div class="card-reading">
                         <div class="card-reading-header">
                             <span class="card-reading-position">${card.position}</span>
                             <span class="card-reading-name">— ${card.name}</span>
                         </div>
-                        <div class="card-reading-text">${card.reading}</div>
+                        <div class="card-reading-body">
+                            <div class="insight-card">
+                                <tarot-card
+                                    face="front"
+                                    size="insight"
+                                    .cardName=${dealt?.name ?? card.name}
+                                    .position=${dealt?.position ?? card.position}
+                                    .reversed=${dealt?.reversed ?? false}
+                                    .previewEnabled=${true}
+                                    .showMeta=${false}
+                                    .width=${70}
+                                    .height=${114}
+                                ></tarot-card>
+                            </div>
+                            <div class="card-reading-text">${card.reading}</div>
+                        </div>
                     </div>
-                `)}
+                `})}
 
                 ${overall ? html`
                     <div class="overall-section">
@@ -161,10 +197,10 @@ export class ReadingDisplay extends LitElement {
     }
 
     private async _toggleTts(): Promise<void> {
-        const tts = this.services.ttsService;
+        const speech = this.services.speechService;
 
         if (this._speaking) {
-            tts.pause();
+            speech.pause();
             this._speaking = false;
             return;
         }
@@ -177,8 +213,7 @@ export class ReadingDisplay extends LitElement {
         this._ttsStatus = 'Loading voice...';
 
         try {
-            const lang = this.services.userContext.language ?? 'ENG';
-            await tts.speakAsync(overall, lang);
+            await speech.speakReadingAsync(overall, this.services.userContext);
             this._ttsStatus = '';
         } catch (err) {
             this._ttsStatus = `TTS: ${err instanceof Error ? err.message : 'unavailable'}`;
@@ -192,12 +227,12 @@ export class ReadingDisplay extends LitElement {
     }
 
     private _enterVoiceMode(): void {
-        this.services.ttsService.stop();
+        this.services.speechService.stop();
         this.dispatchEvent(new CustomEvent('enter-voice'));
     }
 
     private _newReading(): void {
-        this.services.ttsService.stop();
+        this.services.speechService.stop();
         this.dispatchEvent(new CustomEvent('new-reading'));
     }
 }

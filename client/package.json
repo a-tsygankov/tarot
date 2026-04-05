@@ -9,6 +9,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install chromium",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ --ext .ts"
   },
@@ -16,6 +20,7 @@
     "lit": "^3.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "latest",
     "@types/node": "^22.0.0",
     "jsdom": "^27.0.1",
     "typescript": "^5.6.0",

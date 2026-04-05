@@ -39,6 +39,7 @@
             font-family: var(--font-body);
             min-height: 100dvh;
             overflow-x: hidden;
+            touch-action: manipulation;
         }
 
         #app {
@@ -46,6 +47,14 @@
             margin: 0 auto;
             min-height: 100dvh;
             position: relative;
+        }
+
+        button,
+        a,
+        input,
+        textarea,
+        select {
+            touch-action: manipulation;
         }
     </style>
 </head>

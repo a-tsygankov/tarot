@@ -1,84 +1,88 @@
 import type { Env } from '../env.js';
-import type { UserDocument, GameDocument, TurnDocument } from '@shared/contracts/entity-contracts.js';
+import type { GameDocument, SessionDocument, TurnDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
+import {
+    buildLocationKey,
+    listDocuments,
+    loadJson,
+    parseLocationKey,
+    requireAdmin,
+    resolveUid,
+    summarizeGame,
+    summarizeSession,
+} from './admin-helpers.js';
 
 /**
  * GET /api/admin/user/:uid
- * Returns full user profile including traits, stats, preferences.
+ * Returns a full user profile with games, sessions, locations, and extracted traits.
  */
-export async function handleAdminUserDetail(request: Request, env: Env, uid: string): Promise<Response> {
-    const authKey = request.headers.get('X-Admin-Key');
-    if (authKey !== env.ANALYTICS_KEY) {
-        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+export async function handleAdminUserDetail(request: Request, env: Env, uidFragment: string): Promise<Response> {
+    const unauthorized = requireAdmin(request, env);
+    if (unauthorized) {
+        return unauthorized;
     }
 
     try {
-        const userObj = await env.R2.get(`entities/users/${uid}.json`);
-        if (!userObj) {
+        const uid = await resolveUid(env.R2, uidFragment);
+        if (!uid) {
             return Response.json({ error: 'User not found' }, { status: 404 });
         }
 
-        const user = await userObj.json() as UserDocument;
-
-        // Fetch user's game index
-        const indexObj = await env.R2.get(`indexes/user-games/${uid}.json`);
-        const gameIndex = indexObj
-            ? await indexObj.json() as Array<{ id: string; createdAt: string }>
-            : [];
-
-        // Fetch summary for each game (last 50)
-        const recentEntries = gameIndex.slice(-50).reverse();
-        const games: Array<{
-            gameId: string;
-            spreadType: number;
-            question: string | null;
-            topic: string | null;
-            language: string;
-            tone: string;
-            turnCount: number;
-            createdAt: string;
-            location: { country: string | null; city: string | null; timezone: string | null } | null;
-        }> = [];
-
-        for (const entry of recentEntries) {
-            const gObj = await env.R2.get(`entities/games/${entry.id}.json`);
-            if (!gObj) continue;
-            try {
-                const g = await gObj.json() as GameDocument & {
-                    location?: { country: string | null; city: string | null; timezone: string | null };
-                };
-                games.push({
-                    gameId: g.gameId,
-                    spreadType: g.spreadType,
-                    question: g.question,
-                    topic: g.topic,
-                    language: g.language,
-                    tone: g.tone,
-                    turnCount: g.turnCount,
-                    createdAt: g.createdAt,
-                    location: g.location ?? null,
-                });
-            } catch { /* skip malformed */ }
+        const user = await loadJson<UserDocument>(env.R2, `entities/users/${uid}.json`);
+        if (!user) {
+            return Response.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // Collect unique locations from games
-        const locationSet = new Map<string, { country: string | null; city: string | null; timezone: string | null; lastSeen: string }>();
-        for (const g of games) {
-            if (g.location?.country || g.location?.city) {
-                const key = `${g.location.country ?? ''}|${g.location.city ?? ''}`;
-                const existing = locationSet.get(key);
-                if (!existing || g.createdAt > existing.lastSeen) {
-                    locationSet.set(key, { ...g.location, lastSeen: g.createdAt });
-                }
+        const [allGames, allSessions] = await Promise.all([
+            listDocuments<GameDocument>(env.R2, 'entities/games/'),
+            listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
+        ]);
+
+        const userGames = allGames
+            .filter(game => game.uid === uid)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const userSessions = allSessions
+            .filter(session => session.uid === uid)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+        const turns = await Promise.all(
+            userGames.flatMap(game =>
+                Array.from({ length: game.turnCount + 1 }, (_, index) =>
+                    loadJson<TurnDocument>(env.R2, `entities/turns/${game.gameId}/${index + 1}.json`),
+                ),
+            ),
+        );
+        const userTurns = turns.filter((turn): turn is TurnDocument => turn !== null);
+
+        const locationMap = new Map<string, { country: string | null; city: string | null; timezone: string | null; lastSeen: string }>();
+        for (const game of userGames) {
+            if (!game.location?.country && !game.location?.city) {
+                continue;
+            }
+            const key = `${game.location?.city ?? ''}|${game.location?.country ?? ''}`;
+            const current = locationMap.get(key);
+            if (!current || game.createdAt > current.lastSeen) {
+                locationMap.set(key, {
+                    country: game.location?.country ?? null,
+                    city: game.location?.city ?? null,
+                    timezone: game.location?.timezone ?? null,
+                    lastSeen: game.createdAt,
+                });
             }
         }
-        const locations = Array.from(locationSet.values())
-            .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+
+        const sessions = userSessions.map(session => {
+            const sessionGames = userGames.filter(game => game.sessionId === session.sessionId);
+            const sessionTurns = userTurns.filter(turn => turn.uid === uid && sessionGames.some(game => game.gameId === turn.gameId));
+            return summarizeSession(session, sessionGames, sessionTurns);
+        }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         return Response.json({
             user,
-            games,
-            locations,
-            totalGames: gameIndex.length,
+            games: userGames.slice().reverse().map(summarizeGame),
+            sessions,
+            locations: Array.from(locationMap.values()).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)),
+            totalGames: userGames.length,
+            totalSessions: userSessions.length,
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -88,35 +92,149 @@ export async function handleAdminUserDetail(request: Request, env: Env, uid: str
 
 /**
  * GET /api/admin/game/:gameId
- * Returns full game document with all turns.
+ * Returns full game document, session context, and all turns.
  */
 export async function handleAdminGameDetail(request: Request, env: Env, gameId: string): Promise<Response> {
-    const authKey = request.headers.get('X-Admin-Key');
-    if (authKey !== env.ANALYTICS_KEY) {
-        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    const unauthorized = requireAdmin(request, env);
+    if (unauthorized) {
+        return unauthorized;
     }
 
     try {
-        const gameObj = await env.R2.get(`entities/games/${gameId}.json`);
-        if (!gameObj) {
+        const game = await loadJson<GameDocument>(env.R2, `entities/games/${gameId}.json`);
+        if (!game) {
             return Response.json({ error: 'Game not found' }, { status: 404 });
         }
 
-        const game = await gameObj.json() as GameDocument;
+        const [session, user] = await Promise.all([
+            loadJson<SessionDocument>(env.R2, `entities/sessions/${game.sessionId}.json`),
+            loadJson<UserDocument>(env.R2, `entities/users/${game.uid}.json`),
+        ]);
 
-        // Fetch all turns
-        const turns: TurnDocument[] = [];
-        for (let t = 1; t <= game.turnCount + 1; t++) {
-            const tObj = await env.R2.get(`entities/turns/${gameId}/${t}.json`);
-            if (!tObj) continue;
-            try {
-                turns.push(await tObj.json() as TurnDocument);
-            } catch { /* skip */ }
-        }
+        const turns = await Promise.all(
+            Array.from({ length: game.turnCount + 1 }, (_, index) =>
+                loadJson<TurnDocument>(env.R2, `entities/turns/${game.gameId}/${index + 1}.json`),
+            ),
+        );
 
-        return Response.json({ game, turns });
+        return Response.json({
+            game,
+            session,
+            user: user ? {
+                uid: user.uid,
+                name: user.name,
+                lastCity: user.locations.lastCity,
+                lastCountry: user.locations.lastCountry,
+            } : null,
+            turns: turns.filter((turn): turn is TurnDocument => turn !== null),
+        });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return Response.json({ error: 'Failed to load game', message }, { status: 500 });
+    }
+}
+
+/**
+ * GET /api/admin/session/:sessionId
+ * Returns the session document, user, games in the session, and all session turns.
+ */
+export async function handleAdminSessionDetail(request: Request, env: Env, sessionId: string): Promise<Response> {
+    const unauthorized = requireAdmin(request, env);
+    if (unauthorized) {
+        return unauthorized;
+    }
+
+    try {
+        const session = await loadJson<SessionDocument>(env.R2, `entities/sessions/${sessionId}.json`);
+        if (!session) {
+            return Response.json({ error: 'Session not found' }, { status: 404 });
+        }
+
+        const [allGames, user] = await Promise.all([
+            listDocuments<GameDocument>(env.R2, 'entities/games/'),
+            loadJson<UserDocument>(env.R2, `entities/users/${session.uid}.json`),
+        ]);
+        const sessionGames = allGames
+            .filter(game => game.sessionId === sessionId)
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+        const turns = await Promise.all(
+            sessionGames.flatMap(game =>
+                Array.from({ length: game.turnCount + 1 }, (_, index) =>
+                    loadJson<TurnDocument>(env.R2, `entities/turns/${game.gameId}/${index + 1}.json`),
+                ),
+            ),
+        );
+
+        return Response.json({
+            session,
+            user,
+            games: sessionGames.map(summarizeGame),
+            turns: turns.filter((turn): turn is TurnDocument => turn !== null)
+                .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+        });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json({ error: 'Failed to load session', message }, { status: 500 });
+    }
+}
+
+/**
+ * GET /api/admin/location/:locationKey
+ * Returns all sessions, games, and users for a specific city/country combination.
+ */
+export async function handleAdminLocationDetail(request: Request, env: Env, locationKey: string): Promise<Response> {
+    const unauthorized = requireAdmin(request, env);
+    if (unauthorized) {
+        return unauthorized;
+    }
+
+    try {
+        const target = parseLocationKey(locationKey);
+        const [allGames, allSessions, allUsers] = await Promise.all([
+            listDocuments<GameDocument>(env.R2, 'entities/games/'),
+            listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
+            listDocuments<UserDocument>(env.R2, 'entities/users/'),
+        ]);
+
+        const matchesLocation = (city: string | null, country: string | null) =>
+            (city ?? null) === target.city && (country ?? null) === target.country;
+
+        const games = allGames
+            .filter(game => matchesLocation(game.location?.city ?? null, game.location?.country ?? null))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const gameSessionIds = new Set(games.map(game => game.sessionId));
+        const sessions = allSessions
+            .filter(session => matchesLocation(session.city, session.country) || gameSessionIds.has(session.sessionId))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const userIds = new Set([...games.map(game => game.uid), ...sessions.map(session => session.uid)]);
+        const users = allUsers
+            .filter(user => userIds.has(user.uid))
+            .map(user => ({
+                uid: user.uid,
+                name: user.name,
+                lastCity: user.locations.lastCity,
+                lastCountry: user.locations.lastCountry,
+                totalReadings: user.stats.totalReadings,
+                traits: user.traits,
+            }))
+            .sort((a, b) => b.totalReadings - a.totalReadings);
+
+        return Response.json({
+            location: {
+                key: buildLocationKey(target.city, target.country),
+                city: target.city,
+                country: target.country,
+            },
+            sessions: sessions.map(session => {
+                const sessionGames = games.filter(game => game.sessionId === session.sessionId);
+                return summarizeSession(session, sessionGames, []);
+            }),
+            games: games.map(summarizeGame),
+            users,
+        });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json({ error: 'Failed to load location', message }, { status: 500 });
     }
 }

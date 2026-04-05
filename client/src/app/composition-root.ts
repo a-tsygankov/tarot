@@ -6,11 +6,16 @@ import { BrowserSttService } from '../services/Stt/BrowserSttService.js';
 import { ElevenLabsTtsService } from '../services/Tts/ElevenLabsTtsService.js';
 import { BrowserTtsService } from '../services/Tts/BrowserTtsService.js';
 import { FallbackTtsService } from '../services/Tts/FallbackTtsService.js';
+import { SpeechPreferencesResolver } from '../services/Speech/SpeechPreferencesResolver.js';
+import { SpeechService } from '../services/Speech/SpeechService.js';
 import { CompatibilityService } from '../services/Versioning/CompatibilityService.js';
 import { GeoService } from '../services/GeoService.js';
+import { AudioCueService } from '../services/Audio/AudioCueService.js';
 import type { ITtsService } from '../services/Tts/ITtsService.js';
+import type { ISpeechService } from '../services/Speech/ISpeechService.js';
 import type { ISttService } from '../services/Stt/ISttService.js';
 import type { IApiService } from '../services/IApiService.js';
+import type { IAudioCueService } from '../services/Audio/IAudioCueService.js';
 
 /**
  * Composition root — DI wiring.
@@ -22,6 +27,8 @@ export interface AppServices {
     gameContext: GameContext;
     apiService: IApiService;
     ttsService: ITtsService;
+    speechService: ISpeechService;
+    audioCueService: IAudioCueService;
     sttService: ISttService;
     compatibilityService: CompatibilityService;
     geoService: GeoService;
@@ -43,6 +50,9 @@ export function createAppServices(): AppServices {
     const ttsService: ITtsService = CONFIG.tts.fallbackToBrowser
         ? new FallbackTtsService(elevenTts, browserTts)
         : elevenTts;
+    const speechPreferences = new SpeechPreferencesResolver(CONFIG);
+    const speechService = new SpeechService(ttsService, speechPreferences);
+    const audioCueService: IAudioCueService = new AudioCueService();
 
     // STT — browser only
     const sttService: ISttService = new BrowserSttService();
@@ -51,7 +61,9 @@ export function createAppServices(): AppServices {
     const compatibilityService = new CompatibilityService(apiService, CONFIG.version);
 
     // Geo (passive, no permission needed)
-    const geoService = new GeoService();
+    const geoService = new GeoService(CONFIG.apiBase);
+    // Kick off async IP geo fetch (non-blocking)
+    geoService.fetchIpGeo().catch(() => {});
 
     return {
         config: CONFIG,
@@ -59,6 +71,8 @@ export function createAppServices(): AppServices {
         gameContext,
         apiService,
         ttsService,
+        speechService,
+        audioCueService,
         sttService,
         compatibilityService,
         geoService,

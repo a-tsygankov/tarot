@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
     tone: 'tarot_tone',
     theme: 'tarot_theme',
     voiceId: 'tarot_voice_id',
+    voicePreference: 'tarot_voice_preference',
     ttsSpeed: 'tarot_tts_speed',
     font: 'tarot_font',
     userName: 'tarot_user_name',
@@ -33,6 +34,7 @@ export class UserContext implements IUserContext {
     tone = 'Mystical';
     theme = 'dusk';
     voiceId: string | null = null;
+    voicePreference: 'female' | 'male' | 'off' = 'female';
     totalReadings = 0;
     deviceInfo: DeviceInfo;
 
@@ -51,6 +53,7 @@ export class UserContext implements IUserContext {
         this.tone = localStorage.getItem(STORAGE_KEYS.tone) ?? 'Mystical';
         this.theme = localStorage.getItem(STORAGE_KEYS.theme) ?? 'dusk';
         this.voiceId = localStorage.getItem(STORAGE_KEYS.voiceId);
+        this.voicePreference = (localStorage.getItem(STORAGE_KEYS.voicePreference) as 'female' | 'male' | 'off' | null) ?? (this.voiceId === null ? 'off' : 'female');
         this.totalReadings = parseInt(localStorage.getItem(STORAGE_KEYS.totalReadings) ?? '0', 10);
         this.location = this.getApproxLocation();
 
@@ -74,6 +77,7 @@ export class UserContext implements IUserContext {
         localStorage.setItem(STORAGE_KEYS.tone, this.tone);
         localStorage.setItem(STORAGE_KEYS.theme, this.theme);
         this.setIfNotNull(STORAGE_KEYS.voiceId, this.voiceId);
+        localStorage.setItem(STORAGE_KEYS.voicePreference, this.voicePreference);
         localStorage.setItem(STORAGE_KEYS.totalReadings, String(this.totalReadings));
         localStorage.setItem(STORAGE_KEYS.userTraits, JSON.stringify(this.traits));
     }
@@ -129,6 +133,15 @@ export class UserContext implements IUserContext {
         this.save();
     }
 
+    /** Client IP address (populated from GeoService after IP geo fetch) */
+    ip: string | null = null;
+
+    /** City-level location from CF IP geo (more precise than timezone) */
+    ipCity: string | null = null;
+
+    /** Country from CF IP geo */
+    ipCountry: string | null = null;
+
     /** Serialize for API requests. */
     toApiPayload() {
         return {
@@ -141,6 +154,9 @@ export class UserContext implements IUserContext {
             traits: this.traits,
             language: this.language,
             tone: this.tone,
+            ip: this.ip,
+            ipCity: this.ipCity,
+            ipCountry: this.ipCountry,
         };
     }
 
@@ -192,6 +208,9 @@ export class UserContext implements IUserContext {
     private setIfNotNull(key: string, value: string | null): void {
         if (value != null) {
             localStorage.setItem(key, value);
+            return;
         }
+
+        localStorage.removeItem(key);
     }
 }

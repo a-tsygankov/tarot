@@ -31,6 +31,7 @@ interface DashboardData {
         language: string;
         tone: string;
         turnCount: number;
+        city: string | null;
         createdAt: string;
     }>;
     performance: {
@@ -77,9 +78,9 @@ interface UserDetailData {
 }
 
 interface GameDetailData {
-    game: {
-        gameId: string;
-        uid: string;
+        game: {
+            gameId: string;
+            uid: string;
         spreadType: number;
         cards: Array<{ position: string; name: string; reversed: boolean }>;
         question: string | null;
@@ -87,11 +88,12 @@ interface GameDetailData {
         language: string;
         tone: string;
         reading: Record<string, unknown>;
-        readingDigest: string | null;
-        turnCount: number;
-        createdAt: string;
-        location?: { country: string | null; city: string | null; timezone: string | null };
-    };
+            readingDigest: string | null;
+            turnCount: number;
+            createdAt: string;
+            location?: { country: string | null; city: string | null; timezone: string | null };
+            originalRequest?: Record<string, unknown>;
+        };
     turns: Array<{
         turnNumber: number;
         turnType: 'reading' | 'followup';
@@ -112,7 +114,7 @@ type DashView = 'overview' | 'user' | 'game';
 /**
  * Admin dashboard — analytics overview, accessible from debug mode.
  */
-@customElement('dashboard-panel')
+@customElement('dashboard-panel-legacy')
 export class DashboardPanel extends LitElement {
     static override styles = [
         sharedStyles,
@@ -913,6 +915,7 @@ export class DashboardPanel extends LitElement {
                                 <tr>
                                     <th>Time</th>
                                     <th>User</th>
+                                    <th>City</th>
                                     <th>Spread</th>
                                     <th>Topic</th>
                                     <th>Lang</th>
@@ -925,6 +928,7 @@ export class DashboardPanel extends LitElement {
                                     <tr>
                                         <td>${this._formatTime(g.createdAt)}</td>
                                         <td><a class="drill-link" @click=${() => this._openUser(g.uid)}>${g.uid}</a></td>
+                                        <td>${g.city ?? '-'}</td>
                                         <td><a class="drill-link" @click=${() => this._openGame(g.gameId)}>${g.spreadType}-card</a></td>
                                         <td>${g.topic ? html`<span class="tag topic">${g.topic}</span>` : '-'}</td>
                                         <td><span class="tag lang">${g.language}</span></td>
@@ -1280,6 +1284,15 @@ export class DashboardPanel extends LitElement {
                     </div>
                 </div>
 
+                ${g.originalRequest ? html`
+                    <div class="detail-section">
+                        <div class="section-title">Original Request</div>
+                        <div class="turn-card">
+                            <div class="turn-answer">${JSON.stringify(g.originalRequest, null, 2)}</div>
+                        </div>
+                    </div>
+                ` : nothing}
+
                 <!-- Cards dealt -->
                 <div class="detail-section">
                     <div class="section-title">Cards</div>
@@ -1378,6 +1391,6 @@ export class DashboardPanel extends LitElement {
 
 declare global {
     interface HTMLElementTagNameMap {
-        'dashboard-panel': DashboardPanel;
+        'dashboard-panel-legacy': DashboardPanel;
     }
 }

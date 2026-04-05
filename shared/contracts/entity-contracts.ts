@@ -2,6 +2,7 @@
  * R2 entity document contracts.
  * Every document carries type and schemaVersion for runtime validation.
  */
+import type { ReadingRequest } from './api-contracts.js';
 
 export interface BaseDocument {
     type: string;
@@ -78,6 +79,7 @@ export interface GameDocument extends BaseDocument {
         city: string | null;
         timezone: string | null;
     };
+    originalRequest?: ReadingRequest;
 }
 
 // ── Turn ─────────────────────────────────────────────────────────────

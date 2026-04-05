@@ -88,6 +88,9 @@ cd client && npm run dev
 # Worker only
 cd workers/tarot-api && npx wrangler dev
 
+# End-to-end smoke test
+cd client && npm run test:e2e
+
 # Type check
 cd client && npx tsc --noEmit
 cd workers/tarot-api && npx tsc --noEmit
@@ -95,6 +98,25 @@ cd workers/tarot-api && npx tsc --noEmit
 # Tests
 cd client && npm test
 ```
+
+### Browser automation
+
+Playwright is configured in `client/playwright.config.ts` for local end-to-end testing.
+
+```bash
+cd client
+
+# install the test runner + Chromium once
+npm install
+npm run test:e2e:install
+
+# run the smoke test
+npm run test:e2e
+```
+
+The Playwright config starts both local servers automatically:
+- Vite app: `http://localhost:3000/tarot/`
+- Wrangler worker: `http://127.0.0.1:8787`
 
 ---
 

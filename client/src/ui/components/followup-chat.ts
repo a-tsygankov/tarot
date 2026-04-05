@@ -44,7 +44,7 @@ export class FollowupChat extends LitElement {
                 padding: 0.8em 1em;
                 border-radius: 12px;
                 line-height: 1.5;
-                font-size: 0.92em;
+                font-size: var(--font-reading-size, 0.92em);
                 animation: fadeIn 0.3s ease-out;
             }
 
@@ -264,6 +264,12 @@ export class FollowupChat extends LitElement {
         const text = this._input.trim();
         if (!text || this._loading) return;
 
+        // Stop microphone if still active
+        if (this._listening) {
+            this.services.sttService.stop();
+            this._listening = false;
+        }
+
         this._input = '';
         this._messages = [...this._messages, {
             role: 'user',
@@ -335,15 +341,25 @@ export class FollowupChat extends LitElement {
             onResult: (text: string) => {
                 this._input = text;
                 this._listening = false;
+                stt.stop(); // ensure mic is released
             },
             onError: (err: string) => {
                 console.warn('STT error:', err);
                 this._listening = false;
+                stt.stop();
             },
             onEnd: () => {
                 this._listening = false;
             },
         });
+    }
+
+    override disconnectedCallback(): void {
+        super.disconnectedCallback();
+        if (this._listening) {
+            this.services?.sttService?.stop();
+            this._listening = false;
+        }
     }
 
     private _goBack(): void {

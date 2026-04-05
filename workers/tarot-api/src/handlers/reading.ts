@@ -91,6 +91,7 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                     language: userContext.language,
                     tone: userContext.tone,
                     location: geo,
+                    originalRequest: body,
                 });
             }
             await deps.games.applyReading(
@@ -117,6 +118,12 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
             });
 
             // Update user stats + indexes (best-effort)
+            deps.users.upsert(userContext.uid, {
+                country: geo.country,
+                city: geo.city,
+                language: userContext.language,
+                tone: userContext.tone,
+            }).catch(() => {});
             deps.users.incrementStat(userContext.uid, 'totalReadings').catch(() => {});
             deps.indexWriter.addUserGame(userContext.uid, gameContext.gameId).catch(() => {});
             deps.indexWriter.addDateGame(date, gameContext.gameId).catch(() => {});
