@@ -1,8 +1,9 @@
 import type { ISttService, SttHandlers } from '../Stt/ISttService.js';
-import type { ITtsService } from '../Tts/ITtsService.js';
+import type { ISpeechService } from '../Speech/ISpeechService.js';
 import type { IApiService } from '../IApiService.js';
 import type { GameContext } from '../../models/GameContext.js';
 import type { UserContext } from '../../models/UserContext.js';
+import { SpeechPreferencesResolver } from '../Speech/SpeechPreferencesResolver.js';
 
 export type VoiceModeState = 'idle' | 'listening' | 'processing' | 'speaking';
 
@@ -26,10 +27,10 @@ export class VoiceModeService {
 
     constructor(
         private readonly stt: ISttService,
-        private readonly tts: ITtsService,
+        private readonly speech: ISpeechService,
         private readonly api: IApiService,
         private readonly userContext: UserContext,
-        private readonly sttLang: string,
+        private readonly speechPreferences: SpeechPreferencesResolver,
     ) {}
 
     get state(): VoiceModeState {
@@ -61,7 +62,7 @@ export class VoiceModeService {
     stop(): void {
         this._active = false;
         this.stt.stop();
-        this.tts.stop();
+        this.speech.stop();
         this._setState('idle');
     }
 
@@ -95,7 +96,8 @@ export class VoiceModeService {
             },
         };
 
-        this.stt.start(this.sttLang, handlers);
+        const sttLang = this.speechPreferences.resolveBrowserLocale(this.userContext);
+        this.stt.start(sttLang, handlers);
     }
 
     private async _process(game: GameContext, question: string): Promise<void> {
@@ -133,8 +135,7 @@ export class VoiceModeService {
         this._setState('speaking');
 
         try {
-            const lang = this.userContext.language ?? 'ENG';
-            await this.tts.speakAsync(text, lang);
+            await this.speech.speakConversationAsync(text, this.userContext);
         } catch {
             // TTS failure is non-fatal — continue the loop
         }

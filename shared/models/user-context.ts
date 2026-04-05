@@ -14,6 +14,7 @@ export interface IUserContext {
     tone: string;
     theme: string;
     voiceId: string | null;
+    voicePreference: 'female' | 'male' | 'off';
     totalReadings: number;
     deviceInfo: DeviceInfo;
 }

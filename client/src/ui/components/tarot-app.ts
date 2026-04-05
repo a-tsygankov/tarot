@@ -256,6 +256,7 @@ export class TarotApp extends LitElement {
     @state() private _debugMode = false;
     @state() private _isLoading = false;
     @state() private _settingsOpen = false;
+    @state() private _readingVersion = 0;
 
     @query('debug-console') private _debugConsole!: DebugConsole;
 
@@ -349,6 +350,7 @@ export class TarotApp extends LitElement {
                 return html`
                     <reading-display
                         .services=${this._services}
+                        .version=${this._readingVersion}
                         @ask-followup=${() => this.navigate('chat')}
                         @enter-voice=${() => this.navigate('voice')}
                         @new-reading=${() => this._startNewReading()}
@@ -458,9 +460,7 @@ export class TarotApp extends LitElement {
             if (response.userContextDelta) {
                 this._services.userContext.applyAiUpdate(response.userContextDelta);
             }
-            // Force re-render of current screen
-            this._screen = this._screen;
-            this.requestUpdate();
+            this._readingVersion += 1;
         } catch (err) {
             console.error('Re-request reading failed:', err instanceof Error ? err.message : err);
         } finally {

@@ -260,13 +260,7 @@ export class SettingsPanel extends LitElement {
             this._deckStyle = getCurrentDeckStyle();
             this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
             this._fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
-            // Determine voice from voiceId
-            const lang = this.services.config.languages.find(l => l.code === this._language);
-            if (lang?.voiceId) {
-                this._voice = 'Female'; // default; could be expanded
-            } else {
-                this._voice = 'Off';
-            }
+            this._voice = this._voiceLabelFromPreference(uc.voicePreference);
         }
     }
 
@@ -441,6 +435,7 @@ export class SettingsPanel extends LitElement {
         this._language = code;
         if (this.services) {
             this.services.userContext.language = code;
+            this._syncVoiceSelection();
             this.services.userContext.save();
             this.dispatchEvent(new CustomEvent('language-changed', { bubbles: true, composed: true }));
         }
@@ -463,13 +458,8 @@ export class SettingsPanel extends LitElement {
     private _setVoice(voice: string): void {
         this._voice = voice;
         if (this.services) {
-            if (voice === 'Off') {
-                this.services.userContext.voiceId = null;
-            } else {
-                // Use language-specific voice
-                const lang = this.services.config.languages.find(l => l.code === this._language);
-                this.services.userContext.voiceId = lang?.voiceId ?? null;
-            }
+            this.services.userContext.voicePreference = this._voicePreferenceFromLabel(voice);
+            this._syncVoiceSelection();
             this.services.userContext.save();
         }
     }
@@ -518,6 +508,40 @@ export class SettingsPanel extends LitElement {
 
     private _close(): void {
         this.dispatchEvent(new CustomEvent('close'));
+    }
+
+    private _syncVoiceSelection(): void {
+        if (!this.services) return;
+
+        if (this.services.userContext.voicePreference === 'off') {
+            this.services.userContext.voiceId = null;
+            return;
+        }
+
+        const language = this.services.config.languages.find(lang => lang.code === this._language);
+        this.services.userContext.voiceId = language?.voiceId ?? null;
+    }
+
+    private _voiceLabelFromPreference(preference: 'female' | 'male' | 'off'): 'Female' | 'Male' | 'Off' {
+        switch (preference) {
+            case 'male':
+                return 'Male';
+            case 'off':
+                return 'Off';
+            default:
+                return 'Female';
+        }
+    }
+
+    private _voicePreferenceFromLabel(label: string): 'female' | 'male' | 'off' {
+        switch (label) {
+            case 'Male':
+                return 'male';
+            case 'Off':
+                return 'off';
+            default:
+                return 'female';
+        }
     }
 }
 

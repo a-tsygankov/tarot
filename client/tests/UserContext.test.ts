@@ -36,6 +36,7 @@ describe('UserContext', () => {
         expect(ctx.language).toBe('ENG');
         expect(ctx.tone).toBe('Mystical');
         expect(ctx.theme).toBe('dusk');
+        expect(ctx.voicePreference).toBe('female');
         expect(ctx.traits).toEqual({});
         expect(ctx.totalReadings).toBe(0);
     });
@@ -52,6 +53,7 @@ describe('UserContext', () => {
         ctx.gender = 'female';
         ctx.language = 'RUS';
         ctx.tone = 'Ironic';
+        ctx.voicePreference = 'off';
         ctx.traits = { zodiac_sign: 'Scorpio' };
         ctx.totalReadings = 5;
         ctx.save();
@@ -62,6 +64,7 @@ describe('UserContext', () => {
         expect(ctx2.gender).toBe('female');
         expect(ctx2.language).toBe('RUS');
         expect(ctx2.tone).toBe('Ironic');
+        expect(ctx2.voicePreference).toBe('off');
         expect(ctx2.traits).toEqual({ zodiac_sign: 'Scorpio' });
         expect(ctx2.totalReadings).toBe(5);
     });

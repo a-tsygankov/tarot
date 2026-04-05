@@ -96,6 +96,7 @@ export class ReadingDisplay extends LitElement {
     ];
 
     @property({ attribute: false }) services!: AppServices;
+    @property({ type: Number }) version = 0;
 
     @state() private _speaking = false;
     @state() private _ttsStatus = '';
@@ -161,10 +162,10 @@ export class ReadingDisplay extends LitElement {
     }
 
     private async _toggleTts(): Promise<void> {
-        const tts = this.services.ttsService;
+        const speech = this.services.speechService;
 
         if (this._speaking) {
-            tts.pause();
+            speech.pause();
             this._speaking = false;
             return;
         }
@@ -177,8 +178,7 @@ export class ReadingDisplay extends LitElement {
         this._ttsStatus = 'Loading voice...';
 
         try {
-            const lang = this.services.userContext.language ?? 'ENG';
-            await tts.speakAsync(overall, lang);
+            await speech.speakReadingAsync(overall, this.services.userContext);
             this._ttsStatus = '';
         } catch (err) {
             this._ttsStatus = `TTS: ${err instanceof Error ? err.message : 'unavailable'}`;
@@ -192,12 +192,12 @@ export class ReadingDisplay extends LitElement {
     }
 
     private _enterVoiceMode(): void {
-        this.services.ttsService.stop();
+        this.services.speechService.stop();
         this.dispatchEvent(new CustomEvent('enter-voice'));
     }
 
     private _newReading(): void {
-        this.services.ttsService.stop();
+        this.services.speechService.stop();
         this.dispatchEvent(new CustomEvent('new-reading'));
     }
 }

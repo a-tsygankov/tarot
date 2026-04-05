@@ -6,9 +6,12 @@ import { BrowserSttService } from '../services/Stt/BrowserSttService.js';
 import { ElevenLabsTtsService } from '../services/Tts/ElevenLabsTtsService.js';
 import { BrowserTtsService } from '../services/Tts/BrowserTtsService.js';
 import { FallbackTtsService } from '../services/Tts/FallbackTtsService.js';
+import { SpeechPreferencesResolver } from '../services/Speech/SpeechPreferencesResolver.js';
+import { SpeechService } from '../services/Speech/SpeechService.js';
 import { CompatibilityService } from '../services/Versioning/CompatibilityService.js';
 import { GeoService } from '../services/GeoService.js';
 import type { ITtsService } from '../services/Tts/ITtsService.js';
+import type { ISpeechService } from '../services/Speech/ISpeechService.js';
 import type { ISttService } from '../services/Stt/ISttService.js';
 import type { IApiService } from '../services/IApiService.js';
 
@@ -22,6 +25,7 @@ export interface AppServices {
     gameContext: GameContext;
     apiService: IApiService;
     ttsService: ITtsService;
+    speechService: ISpeechService;
     sttService: ISttService;
     compatibilityService: CompatibilityService;
     geoService: GeoService;
@@ -43,6 +47,8 @@ export function createAppServices(): AppServices {
     const ttsService: ITtsService = CONFIG.tts.fallbackToBrowser
         ? new FallbackTtsService(elevenTts, browserTts)
         : elevenTts;
+    const speechPreferences = new SpeechPreferencesResolver(CONFIG);
+    const speechService = new SpeechService(ttsService, speechPreferences);
 
     // STT — browser only
     const sttService: ISttService = new BrowserSttService();
@@ -61,6 +67,7 @@ export function createAppServices(): AppServices {
         gameContext,
         apiService,
         ttsService,
+        speechService,
         sttService,
         compatibilityService,
         geoService,

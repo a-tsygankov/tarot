@@ -4,6 +4,7 @@ import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import { VoiceModeService } from '../../services/VoiceMode/VoiceModeService.js';
 import type { VoiceModeState } from '../../services/VoiceMode/VoiceModeService.js';
+import { SpeechPreferencesResolver } from '../../services/Speech/SpeechPreferencesResolver.js';
 
 interface VoiceEntry {
     role: 'user' | 'oracle' | 'status';
@@ -229,16 +230,12 @@ export class VoiceMode extends LitElement {
 
         if (!this.services) return;
 
-        const lang = this.services.config.languages.find(
-            l => l.code === this.services.userContext.language,
-        )?.sttLang ?? 'en-US';
-
         this._voiceService = new VoiceModeService(
             this.services.sttService,
-            this.services.ttsService,
+            this.services.speechService,
             this.services.apiService,
             this.services.userContext,
-            lang,
+            new SpeechPreferencesResolver(this.services.config),
         );
 
         this._active = true;
