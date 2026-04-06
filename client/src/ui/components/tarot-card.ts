@@ -172,19 +172,10 @@ export class TarotCard extends LitElement {
     private previewReleaseTimer: ReturnType<typeof setTimeout> | null = null;
     private previewCloseTimer: ReturnType<typeof setTimeout> | null = null;
     private suppressActivate = false;
+    private previewOverlay: HTMLDivElement | null = null;
+    private previewCardElement: HTMLDivElement | null = null;
 
     override render() {
-        const previewMarkup = this.previewState !== 'closed'
-            ? html`
-                <div class="preview-backdrop">
-                    <div
-                        class="preview-card ${this.previewState === 'closing' ? 'closing' : ''}"
-                        style=${`--preview-width:${this.previewWidth}px; --preview-height:${this.previewHeight}px;`}
-                    >${unsafeHTML(this.renderFaceSvg(420, 725))}</div>
-                </div>
-            `
-            : nothing;
-
         return html`
             <div
                 class="card-shell ${this.activateOnTap ? 'can-activate' : ''}"
@@ -205,7 +196,6 @@ export class TarotCard extends LitElement {
                     </div>
                 ` : nothing}
             </div>
-            ${previewMarkup}
         `;
     }
 
@@ -283,6 +273,7 @@ export class TarotCard extends LitElement {
     private openPreview(): void {
         this.computePreviewSize();
         this.previewState = 'open';
+        this.renderPreviewOverlay();
         void this.audioCueService?.playCardPreviewOpen();
     }
 
@@ -290,10 +281,12 @@ export class TarotCard extends LitElement {
         this.clearPreviewCloseTimers();
         this.previewReleaseTimer = setTimeout(() => {
             this.previewState = 'closing';
+            this.previewCardElement?.classList.add('closing');
             void this.audioCueService?.playCardPreviewClose();
             this.previewCloseTimer = setTimeout(() => {
                 this.previewState = 'closed';
                 this.suppressActivate = false;
+                this.teardownPreviewOverlay();
             }, 240);
         }, 1000);
     }
@@ -309,6 +302,7 @@ export class TarotCard extends LitElement {
         }
         if (this.previewState === 'closing') {
             this.previewState = 'open';
+            this.previewCardElement?.classList.remove('closing');
         }
     }
 
@@ -325,6 +319,76 @@ export class TarotCard extends LitElement {
         super.disconnectedCallback();
         this.clearLongPressTimer();
         this.clearPreviewCloseTimers();
+        this.teardownPreviewOverlay();
+    }
+
+    private renderPreviewOverlay(): void {
+        this.teardownPreviewOverlay();
+
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.inset = '0';
+        overlay.style.background = 'rgba(8, 5, 16, 0.72)';
+        overlay.style.backdropFilter = 'blur(6px)';
+        overlay.style.zIndex = '10000';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.padding = '5vh 5vw';
+        overlay.style.pointerEvents = 'none';
+
+        const card = document.createElement('div');
+        card.style.width = `${this.previewWidth}px`;
+        card.style.height = `${this.previewHeight}px`;
+        card.style.borderRadius = '18px';
+        card.style.overflow = 'hidden';
+        card.style.border = '1px solid rgba(240, 216, 120, 0.5)';
+        card.style.boxShadow = '0 24px 70px rgba(0, 0, 0, 0.45)';
+        card.style.background = 'var(--bg-card)';
+        card.style.transform = 'translateY(-2vh) scale(1)';
+        card.style.transformOrigin = 'center center';
+        card.style.animation = 'tarot-preview-grow 220ms ease-out both';
+        card.innerHTML = this.renderFaceSvg(420, 725);
+
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes tarot-preview-grow {
+                from {
+                    opacity: 0;
+                    transform: translateY(2vh) scale(0.88);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(-2vh) scale(1);
+                }
+            }
+            @keyframes tarot-preview-shrink {
+                from {
+                    opacity: 1;
+                    transform: translateY(-2vh) scale(1);
+                }
+                to {
+                    opacity: 0;
+                    transform: translateY(1vh) scale(0.84);
+                }
+            }
+            .closing {
+                animation: tarot-preview-shrink 240ms ease-in both !important;
+            }
+        `;
+
+        overlay.appendChild(style);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+
+        this.previewOverlay = overlay;
+        this.previewCardElement = card;
+    }
+
+    private teardownPreviewOverlay(): void {
+        this.previewCardElement = null;
+        this.previewOverlay?.remove();
+        this.previewOverlay = null;
     }
 }
 
