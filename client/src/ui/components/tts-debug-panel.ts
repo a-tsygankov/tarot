@@ -20,6 +20,22 @@ export class TtsDebugPanel extends LitElement {
         .grid { display:grid; grid-template-columns:minmax(140px,auto) 1fr; gap:.35em .9em; font-size:.88em; }
         .k { color: var(--text-faint); }
         .v { color: var(--text); word-break: break-word; }
+        .field {
+            width: 100%;
+            min-height: 7.5em;
+            box-sizing: border-box;
+            padding: .75em .85em;
+            background: rgba(255,255,255,.02);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font: inherit;
+            resize: vertical;
+        }
+        .field:focus {
+            outline: none;
+            border-color: var(--gold-dim);
+        }
         .logs { display:flex; flex-direction:column; gap:.6em; }
         .entry { border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:.7em .8em; background:rgba(255,255,255,.02); }
         .entry-head { display:flex; gap:.6em; flex-wrap:wrap; align-items:center; margin-bottom:.35em; }
@@ -32,6 +48,10 @@ export class TtsDebugPanel extends LitElement {
     @state() private logs: TtsDiagnosticsEntry[] = [];
     @state() private status = '';
     @state() private testing = false;
+    @state() private sampleText = 'This is a speech test for Tarot Oracle.';
+    @state() private sttListening = false;
+    @state() private sttStatus = '';
+    @state() private sttTranscript = '';
 
     private readonly browserTts = new BrowserTtsService();
     private elevenTts?: ElevenLabsTtsService;
@@ -80,6 +100,16 @@ export class TtsDebugPanel extends LitElement {
                 </div>
 
                 <div class="panel">
+                    <div class="section">Sample Text</div>
+                    <textarea
+                        class="field"
+                        placeholder="Enter text for TTS testing..."
+                        .value=${this.sampleText}
+                        @input=${(e: InputEvent) => { this.sampleText = (e.target as HTMLTextAreaElement).value; }}
+                    ></textarea>
+                </div>
+
+                <div class="panel">
                     <div class="section">Actions</div>
                     <div class="row">
                         <button class="btn btn-primary" ?disabled=${this.testing} @click=${this.testBrowserTts}>Test Browser TTS</button>
@@ -88,6 +118,18 @@ export class TtsDebugPanel extends LitElement {
                         <button class="btn btn-ghost" @click=${() => this.dispatchEvent(new CustomEvent('close'))}>Close</button>
                     </div>
                     ${this.status ? html`<div class="subtle" style="margin-top:.7em;">${this.status}</div>` : ''}
+                </div>
+
+                <div class="panel">
+                    <div class="section">STT Verification</div>
+                    <div class="row">
+                        <button class="btn btn-primary" ?disabled=${this.testing || this.sttListening} @click=${this.startSttTest}>Start STT</button>
+                        <button class="btn" ?disabled=${!this.sttListening} @click=${this.stopSttTest}>Stop STT</button>
+                        <button class="btn btn-ghost" @click=${this.clearSttResult}>Clear STT</button>
+                    </div>
+                    ${this.sttStatus ? html`<div class="subtle" style="margin-top:.7em;">${this.sttStatus}</div>` : ''}
+                    <div class="section" style="margin-top:1em;">Transcript</div>
+                    <pre>${this.sttTranscript || 'No transcript captured yet.'}</pre>
                 </div>
 
                 <div class="panel">
@@ -121,7 +163,7 @@ export class TtsDebugPanel extends LitElement {
         this.status = 'Testing browser TTS...';
         try {
             await this.browserTts.speakAsync(
-                'This is a browser speech test for Tarot Oracle.',
+                this.sampleText.trim() || 'This is a browser speech test for Tarot Oracle.',
                 locale,
                 { speed: resolver.resolveSpeechOptions(this.services.userContext).speed },
             );
@@ -142,7 +184,7 @@ export class TtsDebugPanel extends LitElement {
         this.status = 'Testing ElevenLabs TTS...';
         try {
             await this.elevenTts?.speakAsync(
-                'This is an ElevenLabs speech test for Tarot Oracle.',
+                this.sampleText.trim() || 'This is an ElevenLabs speech test for Tarot Oracle.',
                 locale,
                 speakOptions,
             );
@@ -154,6 +196,50 @@ export class TtsDebugPanel extends LitElement {
             this.logs = getTtsDiagnostics();
         }
     }
+
+    private startSttTest = (): void => {
+        const resolver = new SpeechPreferencesResolver(this.services.config);
+        const locale = resolver.resolveBrowserLocale(this.services.userContext);
+        this.sttStatus = `Listening with ${locale}...`;
+        this.sttTranscript = '';
+
+        this.services.sttService.start(locale, {
+            onStart: () => {
+                this.sttListening = true;
+                this.sttStatus = `Listening with ${locale}...`;
+            },
+            onInterim: (transcript) => {
+                this.sttTranscript = transcript.trim();
+                this.sttStatus = 'Receiving interim transcript...';
+            },
+            onResult: (transcript) => {
+                this.sttTranscript = transcript.trim();
+                this.sttStatus = 'STT captured final transcript.';
+            },
+            onEnd: () => {
+                this.sttListening = false;
+                if (!this.sttStatus.startsWith('STT captured')) {
+                    this.sttStatus = 'STT ended.';
+                }
+            },
+            onError: (error) => {
+                this.sttListening = false;
+                this.sttStatus = `STT error: ${error}`;
+            },
+        });
+    };
+
+    private stopSttTest = (): void => {
+        this.services.sttService.stop();
+        this.sttListening = false;
+        this.sttStatus = 'STT stopped.';
+    };
+
+    private clearSttResult = (): void => {
+        this.sttListening = false;
+        this.sttStatus = '';
+        this.sttTranscript = '';
+    };
 }
 
 declare global {

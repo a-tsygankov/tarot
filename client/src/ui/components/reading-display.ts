@@ -175,6 +175,7 @@ export class ReadingDisplay extends LitElement {
     @property({ type: Number }) version = 0;
 
     @state() private _speaking = false;
+    @state() private _paused = false;
     @state() private _ttsStatus = '';
     @state() private _showOverallActions = false;
     @state() private _copyTooltip = false;
@@ -255,7 +256,7 @@ export class ReadingDisplay extends LitElement {
 
                 <div class="actions-bar">
                     <button class="btn" @click=${this._toggleTts}>
-                        ${this._speaking ? '⏸ Pause' : '🔊 Listen'}
+                        ${this._speaking ? (this._paused ? '▶ Resume' : '⏸ Pause') : '🔊 Listen'}
                     </button>
                     <button class="btn btn-primary" @click=${this._askFollowUp}>
                         💬 Ask Follow-up
@@ -279,8 +280,15 @@ export class ReadingDisplay extends LitElement {
         const speech = this.services.speechService;
 
         if (this._speaking) {
-            speech.pause();
-            this._speaking = false;
+            if (this._paused) {
+                speech.resume();
+                this._paused = false;
+                this._ttsStatus = 'Playing...';
+            } else {
+                speech.pause();
+                this._paused = true;
+                this._ttsStatus = 'Paused';
+            }
             return;
         }
 
@@ -289,16 +297,20 @@ export class ReadingDisplay extends LitElement {
         if (!overall) return;
 
         this._speaking = true;
+        this._paused = false;
         this._ttsStatus = 'Loading voice...';
 
-        try {
-            await speech.speakReadingAsync(overall, this.services.userContext);
-            this._ttsStatus = '';
-        } catch (err) {
-            this._ttsStatus = `TTS: ${err instanceof Error ? err.message : 'unavailable'}`;
-        } finally {
-            this._speaking = false;
-        }
+        void speech.speakReadingAsync(overall, this.services.userContext)
+            .then(() => {
+                this._ttsStatus = '';
+            })
+            .catch((err) => {
+                this._ttsStatus = `TTS: ${err instanceof Error ? err.message : 'unavailable'}`;
+            })
+            .finally(() => {
+                this._speaking = false;
+                this._paused = false;
+            });
     }
 
     private _askFollowUp(): void {
@@ -307,11 +319,17 @@ export class ReadingDisplay extends LitElement {
 
     private _enterVoiceMode(): void {
         this.services.speechService.stop();
+        this._speaking = false;
+        this._paused = false;
+        this._ttsStatus = '';
         this.dispatchEvent(new CustomEvent('enter-voice'));
     }
 
     private _newReading(): void {
         this.services.speechService.stop();
+        this._speaking = false;
+        this._paused = false;
+        this._ttsStatus = '';
         this.dispatchEvent(new CustomEvent('new-reading'));
     }
 
@@ -433,6 +451,7 @@ export class ReadingDisplay extends LitElement {
 
     override disconnectedCallback(): void {
         super.disconnectedCallback();
+        this.services?.speechService.stop();
         if (this._overallActionsTimer) {
             clearTimeout(this._overallActionsTimer);
         }
