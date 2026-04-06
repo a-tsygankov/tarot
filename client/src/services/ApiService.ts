@@ -7,6 +7,7 @@ import type {
     FollowUpResponse,
     TtsRequest,
     TtsFallbackResponse,
+    TtsErrorResponse,
     SessionRequest,
     EventRequest,
     VersionResponse,
@@ -92,7 +93,19 @@ export class ApiService implements IApiService {
         }
 
         if (!response.ok) {
-            throw new Error('TTS request failed: ' + response.status);
+            let errorBody: TtsErrorResponse | null = null;
+            try {
+                errorBody = await response.json() as TtsErrorResponse;
+            } catch {
+                errorBody = null;
+            }
+
+            throw new TtsRequestError(
+                errorBody?.message || `TTS request failed: ${response.status}`,
+                response.status,
+                errorBody?.code ?? null,
+                errorBody?.details ?? null,
+            );
         }
 
         options?.progress?.report('Audio ready', 80);
@@ -234,5 +247,17 @@ export class TtsQuotaExceededError extends Error {
     constructor(public readonly reason: string) {
         super('TTS quota exceeded: ' + reason);
         this.name = 'TtsQuotaExceededError';
+    }
+}
+
+export class TtsRequestError extends Error {
+    constructor(
+        message: string,
+        public readonly status: number,
+        public readonly code: string | null,
+        public readonly details: Record<string, unknown> | null,
+    ) {
+        super(message);
+        this.name = 'TtsRequestError';
     }
 }

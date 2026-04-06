@@ -56,6 +56,13 @@ export interface TtsFallbackResponse {
     reason: string;
 }
 
+export interface TtsErrorResponse {
+    error: string;
+    message: string;
+    code?: string;
+    details?: Record<string, unknown>;
+}
+
 // ── Session ──────────────────────────────────────────────────────────
 
 export interface SessionRequest {

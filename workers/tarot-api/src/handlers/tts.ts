@@ -1,6 +1,6 @@
 import type { Env } from '../env.js';
 import type { TtsRequest } from '@shared/contracts/api-contracts.js';
-import { callElevenLabs } from '../services/elevenlabs.js';
+import { callElevenLabs, ElevenLabsApiError } from '../services/elevenlabs.js';
 
 /**
  * POST /api/tts — ElevenLabs TTS proxy with R2 cache and budget tracking.
@@ -51,8 +51,23 @@ export async function handleTts(request: Request, env: Env): Promise<Response> {
         });
     } catch (err) {
         console.error('TTS handler error:', err);
+        if (err instanceof ElevenLabsApiError) {
+            return Response.json(
+                {
+                    error: 'TTS failed',
+                    message: err.message,
+                    code: err.code,
+                    details: err.details,
+                },
+                { status: err.status >= 400 && err.status < 600 ? err.status : 500 },
+            );
+        }
         return Response.json(
-            { error: 'TTS failed', message: String(err) },
+            {
+                error: 'TTS failed',
+                message: err instanceof Error ? err.message : String(err),
+                code: 'tts_unhandled_error',
+            },
             { status: 500 },
         );
     }

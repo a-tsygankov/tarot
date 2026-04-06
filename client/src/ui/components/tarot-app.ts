@@ -12,11 +12,12 @@ import './followup-chat.js';
 import './settings-panel.js';
 import './voice-mode.js';
 import './debug-console.js';
+import './tts-debug-panel.js';
 import './star-background.js';
 import './dashboard-panel-lite.js';
 import type { DebugConsole } from './debug-console.js';
 
-export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard';
+export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard' | 'tts-debug';
 
 /**
  * Root application shell — manages screen navigation and services.
@@ -336,6 +337,9 @@ export class TarotApp extends LitElement {
                 </div>
                 <div class="bar-right">
                     ${this._debugMode ? html`
+                        <button class="console-toggle" @click=${() => this.navigate('tts-debug')}>
+                            TTS
+                        </button>
                         <button class="console-toggle" @click=${() => this.navigate('dashboard')}>
                             Dash
                         </button>
@@ -400,6 +404,13 @@ export class TarotApp extends LitElement {
                         .services=${this._services}
                         @close=${() => this.navigate('home')}
                     ></dashboard-panel>
+                `;
+            case 'tts-debug':
+                return html`
+                    <tts-debug-panel
+                        .services=${this._services}
+                        @close=${() => this.navigate('home')}
+                    ></tts-debug-panel>
                 `;
         }
     }
