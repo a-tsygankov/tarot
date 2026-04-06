@@ -37,15 +37,13 @@ const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1350;
 const FRAME_MARGIN = 42;
 const FRAME_BORDER = 6;
-const FRAME_PADDING_X = 64;
-const FRAME_PADDING_TOP = 52;
-const FRAME_PADDING_BOTTOM = 78;
-const SAFE_LEFT = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING_X;
-const SAFE_TOP = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING_TOP;
-const SAFE_RIGHT = CANVAS_WIDTH - FRAME_MARGIN - FRAME_BORDER - FRAME_PADDING_X;
-const SAFE_BOTTOM = CANVAS_HEIGHT - FRAME_MARGIN - FRAME_BORDER - FRAME_PADDING_BOTTOM;
+const FRAME_PADDING = 74;
+const SAFE_LEFT = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING;
+const SAFE_TOP = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING;
+const SAFE_RIGHT = CANVAS_WIDTH - FRAME_MARGIN - FRAME_BORDER - FRAME_PADDING;
+const SAFE_BOTTOM = CANVAS_HEIGHT - FRAME_MARGIN - FRAME_BORDER - FRAME_PADDING;
 const CONTENT_WIDTH = SAFE_RIGHT - SAFE_LEFT;
-const HERO_TOP = SAFE_TOP + 78;
+const HERO_TOP = SAFE_TOP + 88;
 const HERO_GAP = 36;
 const SPREAD_SECTION_MIN_HEIGHT = 180;
 const MAX_VISIBLE_CARDS = 5;
@@ -111,7 +109,7 @@ export class ReadingImageExporter {
             input.overallReading,
             textColumnWidth,
         );
-        const besideLineHeight = 42;
+        const besideLineHeight = 44;
         const besideCapacity = Math.max(
             4,
             Math.floor((cardBlock.height - 18) / besideLineHeight),
@@ -120,7 +118,7 @@ export class ReadingImageExporter {
         const remainingText = besideLines.slice(besideCapacity).join(' ');
 
         await this.paintCardBlock(context, input.cards.slice(0, MAX_VISIBLE_CARDS), cardBlock, plan.cardStage);
-        this.paintReadingLines(context, initialLines, textStartX, textTop, besideLineHeight);
+        this.paintReadingLines(context, initialLines, textStartX, textTop, besideLineHeight, textColumnWidth, true);
 
         const remainingTop = Math.max(
             cardBlock.y + cardBlock.height + 42,
@@ -135,7 +133,7 @@ export class ReadingImageExporter {
         const fullWidthLines = remainingText
             ? this.wrapText(context, remainingText, CONTENT_WIDTH)
             : [];
-        let fullWidthLineHeight = 37;
+        let fullWidthLineHeight = 38;
         const fullWidthCapacity = Math.max(0, Math.floor(remainingAreaHeight / fullWidthLineHeight));
         const bodyLines = fullWidthLines.slice(0, fullWidthCapacity);
         if (fullWidthLines.length > fullWidthCapacity && bodyLines.length > 0) {
@@ -145,17 +143,21 @@ export class ReadingImageExporter {
         const usedBodyHeight = bodyLines.length * fullWidthLineHeight;
         const usedSpreadHeight = this.measureTextHeight(spreadSummaryLines.length, spreadLineHeight) + 48;
         const freeBottomSpace = Math.max(0, (SAFE_BOTTOM - WATERMARK_HEIGHT) - (remainingTop + usedBodyHeight + 28 + usedSpreadHeight));
-        if (freeBottomSpace > 22) {
-            const bodyRoom = bodyLines.length > 1 ? Math.min(8, Math.floor(freeBottomSpace / Math.max(bodyLines.length, 2))) : 0;
+        if (freeBottomSpace > 18) {
+            const bodyRoom = bodyLines.length > 1
+                ? Math.min(10, Math.round(freeBottomSpace / Math.max(bodyLines.length + 2, 4)))
+                : 0;
             fullWidthLineHeight += bodyRoom;
-            const spreadRoom = spreadSummaryLines.length > 1 ? Math.min(5, Math.floor((freeBottomSpace - bodyRoom * bodyLines.length) / Math.max(spreadSummaryLines.length, 2))) : 0;
+            const spreadRoom = spreadSummaryLines.length > 0
+                ? Math.min(6, Math.round((freeBottomSpace - bodyRoom * Math.max(bodyLines.length - 1, 0)) / Math.max(spreadSummaryLines.length + 3, 4)))
+                : 0;
             spreadLineHeight += Math.max(0, spreadRoom);
             spreadHeight = this.measureTextHeight(spreadSummaryLines.length, spreadLineHeight) + 48;
         }
 
         const adjustedSpreadY = Math.max(spreadTop, SAFE_BOTTOM - WATERMARK_HEIGHT - spreadHeight);
 
-        this.paintReadingLines(context, bodyLines, SAFE_LEFT, remainingTop, fullWidthLineHeight);
+        this.paintReadingLines(context, bodyLines, SAFE_LEFT, remainingTop, fullWidthLineHeight, CONTENT_WIDTH, true);
         this.paintSpreadSection(context, adjustedSpreadY, spreadSummaryLines, spreadLineHeight);
         this.paintWatermark(context, plan.watermarkUrl);
 
@@ -203,11 +205,11 @@ export class ReadingImageExporter {
 
     private paintHeader(context: CanvasRenderingContext2D, title: string, subtitle: string): void {
         context.fillStyle = '#e1c271';
-        context.font = '700 50px Georgia, serif';
+        context.font = '700 58px Georgia, serif';
         context.fillText(title, SAFE_LEFT, SAFE_TOP + 4);
         context.fillStyle = '#efe6d2';
-        context.font = '600 25px Georgia, serif';
-        context.fillText(subtitle, SAFE_LEFT, SAFE_TOP + 48);
+        context.font = '600 31px Georgia, serif';
+        context.fillText(subtitle, SAFE_LEFT, SAFE_TOP + 56);
     }
 
     private async paintCardBlock(
@@ -251,10 +253,17 @@ export class ReadingImageExporter {
         x: number,
         y: number,
         lineHeight: number,
+        maxWidth: number,
+        justify = false,
     ): void {
         context.fillStyle = '#f3ead7';
         context.font = '400 33px Georgia, serif';
         lines.forEach((line, index) => {
+            const isLastLine = index === lines.length - 1;
+            if (justify && !isLastLine) {
+                this.fillJustifiedText(context, line, x, y + index * lineHeight, maxWidth);
+                return;
+            }
             context.fillText(line, x, y + index * lineHeight);
         });
     }
@@ -266,7 +275,7 @@ export class ReadingImageExporter {
         lineHeight: number,
     ): void {
         context.fillStyle = '#d8bc74';
-        context.font = '600 25px Georgia, serif';
+        context.font = '600 31px Georgia, serif';
         context.fillText('Spread', SAFE_LEFT, top);
 
         context.fillStyle = '#efe6d2';
@@ -282,8 +291,8 @@ export class ReadingImageExporter {
         const textWidth = context.measureText(url).width;
         const stampWidth = textWidth + 32;
         const stampHeight = 32;
-        const x = SAFE_RIGHT - stampWidth - 8;
-        const y = SAFE_BOTTOM - stampHeight - 2;
+        const x = SAFE_RIGHT - stampWidth;
+        const y = SAFE_BOTTOM - stampHeight;
 
         context.fillStyle = 'rgba(22, 11, 34, 0.94)';
         context.strokeStyle = 'rgba(225, 194, 113, 0.45)';
@@ -315,6 +324,35 @@ export class ReadingImageExporter {
     private resolveCardBlockHeight(cardColumnWidth: number, cardCount: number): number {
         const base = Math.max(250, cardColumnWidth * 0.68);
         return Math.round(base + 34 + Math.min(cardCount, 5) * 22);
+    }
+
+    private fillJustifiedText(
+        context: CanvasRenderingContext2D,
+        line: string,
+        x: number,
+        y: number,
+        maxWidth: number,
+    ): void {
+        const words = line.trim().split(/\s+/).filter(Boolean);
+        if (words.length <= 1) {
+            context.fillText(line, x, y);
+            return;
+        }
+
+        const lineWidth = context.measureText(line).width;
+        const gapCount = words.length - 1;
+        const baseSpace = context.measureText(' ').width;
+        const extraSpace = Math.max(0, maxWidth - lineWidth);
+        const justifiedSpace = baseSpace + (extraSpace / gapCount);
+
+        let cursorX = x;
+        words.forEach((word, index) => {
+            context.fillText(word, cursorX, y);
+            cursorX += context.measureText(word).width;
+            if (index < gapCount) {
+                cursorX += justifiedSpace;
+            }
+        });
     }
 
     private resolveCardStage(
