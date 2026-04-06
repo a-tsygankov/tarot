@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { sharedStyles } from '../styles/shared.js';
 import { cardBackSvg, getCardArt } from './card-art-registry.js';
+import type { IAudioCueService } from '../../services/Audio/IAudioCueService.js';
 
 type CardFace = 'back' | 'front';
 type CardSize = 'spread' | 'compact' | 'insight';
@@ -161,6 +162,7 @@ export class TarotCard extends LitElement {
     @property({ type: Number, attribute: 'offset-y' }) offsetY = 0;
     @property({ type: Number, attribute: 'long-press-ms' }) longPressMs = 260;
     @property({ type: Boolean, reflect: true }) interactive = false;
+    @property({ attribute: false }) audioCueService?: IAudioCueService;
 
     @state() private previewState: 'closed' | 'open' | 'closing' = 'closed';
     @state() private previewWidth = 320;
@@ -281,12 +283,14 @@ export class TarotCard extends LitElement {
     private openPreview(): void {
         this.computePreviewSize();
         this.previewState = 'open';
+        void this.audioCueService?.playCardPreviewOpen();
     }
 
     private schedulePreviewClose(): void {
         this.clearPreviewCloseTimers();
         this.previewReleaseTimer = setTimeout(() => {
             this.previewState = 'closing';
+            void this.audioCueService?.playCardPreviewClose();
             this.previewCloseTimer = setTimeout(() => {
                 this.previewState = 'closed';
                 this.suppressActivate = false;

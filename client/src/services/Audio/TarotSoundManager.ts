@@ -59,6 +59,17 @@ export class TarotSoundManager {
         return this.playParchmentCrackle(context, options);
     }
 
+    async playCardPreview(options: {
+        fadeInMs?: number;
+        signal?: AbortSignal;
+        closing?: boolean;
+        volume?: number;
+    } = {}): Promise<SoundPlayback> {
+        const context = this.getContext();
+        await this.initialize();
+        return this.playParchmentSwipe(context, options);
+    }
+
     async playOracleWaiting(options: {
         fadeInMs?: number;
         loop?: boolean;
@@ -297,67 +308,205 @@ export class TarotSoundManager {
         context: AudioContext,
         options: { fadeInMs?: number; loop?: boolean; signal?: AbortSignal; volume?: number },
     ): SoundPlayback {
-        const playback = this.createPlayback('oracle-waiting', options.volume ?? 0.34);
+        const playback = this.createPlayback('oracle-waiting', options.volume ?? 0.3);
         this.attachAbortSignal(playback, options.signal);
-        this.applyFadeIn(playback.output, options.fadeInMs ?? 300);
+        this.applyFadeIn(playback.output, options.fadeInMs ?? 420);
 
-        const lowOscillator = context.createOscillator();
-        lowOscillator.type = 'sine';
-        lowOscillator.frequency.value = 174.61;
+        const orbOscillator = context.createOscillator();
+        orbOscillator.type = 'sine';
+        orbOscillator.frequency.value = 146.83;
 
-        const highOscillator = context.createOscillator();
-        highOscillator.type = 'triangle';
-        highOscillator.frequency.value = 261.63;
+        const shimmerOscillator = context.createOscillator();
+        shimmerOscillator.type = 'triangle';
+        shimmerOscillator.frequency.value = 293.66;
 
-        const lowGain = context.createGain();
-        lowGain.gain.value = 0.22;
+        const haloOscillator = context.createOscillator();
+        haloOscillator.type = 'sine';
+        haloOscillator.frequency.value = 440;
 
-        const highGain = context.createGain();
-        highGain.gain.value = 0.08;
+        const orbGain = context.createGain();
+        orbGain.gain.value = 0.16;
 
-        const lowPass = context.createBiquadFilter();
-        lowPass.type = 'lowpass';
-        lowPass.frequency.value = 850;
-        lowPass.Q.value = 0.8;
+        const shimmerGain = context.createGain();
+        shimmerGain.gain.value = 0.045;
 
-        const tremolo = context.createOscillator();
-        tremolo.type = 'sine';
-        tremolo.frequency.value = 0.22;
+        const haloGain = context.createGain();
+        haloGain.gain.value = 0.03;
 
-        const tremoloDepth = context.createGain();
-        tremoloDepth.gain.value = 0.035;
+        const orbFilter = context.createBiquadFilter();
+        orbFilter.type = 'lowpass';
+        orbFilter.frequency.value = 620;
+        orbFilter.Q.value = 1.3;
 
-        tremolo.connect(tremoloDepth);
-        tremoloDepth.connect(lowGain.gain);
-        tremoloDepth.connect(highGain.gain);
+        const shimmerFilter = context.createBiquadFilter();
+        shimmerFilter.type = 'bandpass';
+        shimmerFilter.frequency.value = 1180;
+        shimmerFilter.Q.value = 1.8;
 
-        lowOscillator.connect(lowGain);
-        highOscillator.connect(highGain);
-        lowGain.connect(lowPass);
-        highGain.connect(lowPass);
-        lowPass.connect(playback.output);
+        const haloFilter = context.createBiquadFilter();
+        haloFilter.type = 'highpass';
+        haloFilter.frequency.value = 900;
+        haloFilter.Q.value = 0.7;
+
+        const masterTone = context.createBiquadFilter();
+        masterTone.type = 'lowpass';
+        masterTone.frequency.value = 1500;
+        masterTone.Q.value = 0.9;
+
+        const pulseLfo = context.createOscillator();
+        pulseLfo.type = 'sine';
+        pulseLfo.frequency.value = 0.11;
+
+        const pulseDepth = context.createGain();
+        pulseDepth.gain.value = 0.028;
+
+        const shimmerLfo = context.createOscillator();
+        shimmerLfo.type = 'sine';
+        shimmerLfo.frequency.value = 0.19;
+
+        const shimmerDepth = context.createGain();
+        shimmerDepth.gain.value = 80;
+
+        const haloLfo = context.createOscillator();
+        haloLfo.type = 'triangle';
+        haloLfo.frequency.value = 0.31;
+
+        const haloDepth = context.createGain();
+        haloDepth.gain.value = 0.012;
+
+        const noiseBufferLength = Math.floor(context.sampleRate * 2.8);
+        const noiseBuffer = context.createBuffer(1, noiseBufferLength, context.sampleRate);
+        const noiseData = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < noiseBufferLength; i += 1) {
+            const previous = i > 0 ? noiseData[i - 1] : 0;
+            noiseData[i] = (previous * 0.985) + ((Math.random() * 2 - 1) * 0.018);
+        }
+
+        const noiseSource = context.createBufferSource();
+        noiseSource.buffer = noiseBuffer;
+        noiseSource.loop = true;
+
+        const noiseFilter = context.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 720;
+        noiseFilter.Q.value = 0.7;
+
+        const noiseGain = context.createGain();
+        noiseGain.gain.value = 0.038;
+
+        pulseLfo.connect(pulseDepth);
+        pulseDepth.connect(orbGain.gain);
+
+        shimmerLfo.connect(shimmerDepth);
+        shimmerDepth.connect(shimmerFilter.frequency);
+
+        haloLfo.connect(haloDepth);
+        haloDepth.connect(haloGain.gain);
+
+        orbOscillator.connect(orbGain);
+        orbGain.connect(orbFilter);
+        orbFilter.connect(masterTone);
+
+        shimmerOscillator.connect(shimmerGain);
+        shimmerGain.connect(shimmerFilter);
+        shimmerFilter.connect(masterTone);
+
+        haloOscillator.connect(haloGain);
+        haloGain.connect(haloFilter);
+        haloFilter.connect(masterTone);
+
+        noiseSource.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(masterTone);
+
+        masterTone.connect(playback.output);
 
         const now = context.currentTime;
-        lowOscillator.frequency.setValueAtTime(174.61, now);
-        lowOscillator.frequency.linearRampToValueAtTime(196.0, now + 8);
-        lowOscillator.frequency.linearRampToValueAtTime(174.61, now + 16);
+        orbOscillator.frequency.setValueAtTime(146.83, now);
+        orbOscillator.frequency.linearRampToValueAtTime(155.56, now + 7.5);
+        orbOscillator.frequency.linearRampToValueAtTime(146.83, now + 15);
 
-        highOscillator.frequency.setValueAtTime(261.63, now);
-        highOscillator.frequency.linearRampToValueAtTime(293.66, now + 6);
-        highOscillator.frequency.linearRampToValueAtTime(246.94, now + 12);
-        highOscillator.frequency.linearRampToValueAtTime(261.63, now + 18);
+        shimmerOscillator.frequency.setValueAtTime(293.66, now);
+        shimmerOscillator.frequency.linearRampToValueAtTime(329.63, now + 5.5);
+        shimmerOscillator.frequency.linearRampToValueAtTime(277.18, now + 11);
+        shimmerOscillator.frequency.linearRampToValueAtTime(293.66, now + 16.5);
 
-        lowOscillator.start();
-        highOscillator.start();
-        tremolo.start();
+        haloOscillator.frequency.setValueAtTime(440, now);
+        haloOscillator.frequency.linearRampToValueAtTime(493.88, now + 8);
+        haloOscillator.frequency.linearRampToValueAtTime(466.16, now + 15);
 
-        playback.sources.push(lowOscillator, highOscillator, tremolo);
+        orbOscillator.start();
+        shimmerOscillator.start();
+        haloOscillator.start();
+        pulseLfo.start();
+        shimmerLfo.start();
+        haloLfo.start();
+        noiseSource.start();
+
+        playback.sources.push(
+            orbOscillator,
+            shimmerOscillator,
+            haloOscillator,
+            pulseLfo,
+            shimmerLfo,
+            haloLfo,
+            noiseSource,
+        );
 
         if (!options.loop) {
             window.setTimeout(() => {
                 void playback.stop();
             }, 7000);
         }
+
+        return playback;
+    }
+
+    private playParchmentSwipe(
+        context: AudioContext,
+        options: { fadeInMs?: number; signal?: AbortSignal; closing?: boolean; volume?: number },
+    ): SoundPlayback {
+        const durationSeconds = options.closing ? 0.28 : 0.34;
+        const playback = this.createPlayback('card-preview', options.volume ?? 0.7);
+        this.attachAbortSignal(playback, options.signal);
+
+        const bufferLength = Math.floor(context.sampleRate * durationSeconds);
+        const buffer = context.createBuffer(1, bufferLength, context.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferLength; i += 1) {
+            const t = i / context.sampleRate;
+            const sweep = options.closing
+                ? Math.exp(-t * 7.2)
+                : Math.sin(Math.min(1, t / durationSeconds) * Math.PI) * Math.exp(-t * 2.6);
+            const grain = (Math.random() * 2 - 1) * 0.095;
+            const crackle = Math.random() < 0.045 ? (Math.random() - 0.5) * 0.8 : 0;
+            data[i] = (grain + crackle) * sweep;
+        }
+
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+
+        const highPass = context.createBiquadFilter();
+        highPass.type = 'highpass';
+        highPass.frequency.value = options.closing ? 540 : 460;
+
+        const bandPass = context.createBiquadFilter();
+        bandPass.type = 'bandpass';
+        bandPass.frequency.value = options.closing ? 1900 : 1560;
+        bandPass.Q.value = 1.1;
+
+        const softGain = context.createGain();
+        softGain.gain.value = options.closing ? 0.78 : 0.88;
+
+        source.connect(highPass);
+        highPass.connect(bandPass);
+        bandPass.connect(softGain);
+        softGain.connect(playback.output);
+
+        this.trackSource(playback, source, durationSeconds * 1000);
+        this.applyFadeIn(playback.output, options.fadeInMs);
+        source.start();
 
         return playback;
     }

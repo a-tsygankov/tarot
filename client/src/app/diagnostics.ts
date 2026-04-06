@@ -48,7 +48,9 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     }
     // Show worker version if API check succeeded
     if (apiCheck.serverVersion) {
-        console.log(`Worker: v${apiCheck.serverVersion.worker.version} | Schema: ${apiCheck.serverVersion.schema.current}`);
+        console.log(
+            `Client: v${config.version} | Worker: v${apiCheck.serverVersion.worker.version} | Schema: ${apiCheck.serverVersion.schema.current}`,
+        );
     }
     console.groupEnd();
 
@@ -145,4 +147,3 @@ async function checkStt(stt: { isAvailable(): boolean }): Promise<HealthCheck> {
         detail: available ? 'available (Web Speech API)' : 'not available (no browser support)',
     };
 }
-

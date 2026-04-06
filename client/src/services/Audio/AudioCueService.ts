@@ -16,6 +16,30 @@ export class AudioCueService implements IAudioCueService {
         }
     }
 
+    async playCardPreviewOpen(): Promise<void> {
+        try {
+            await this.soundManager.playCardPreview({
+                fadeInMs: 8,
+                closing: false,
+                volume: 0.72,
+            });
+        } catch (error) {
+            console.warn('Card preview open sound failed:', error);
+        }
+    }
+
+    async playCardPreviewClose(): Promise<void> {
+        try {
+            await this.soundManager.playCardPreview({
+                fadeInMs: 4,
+                closing: true,
+                volume: 0.64,
+            });
+        } catch (error) {
+            console.warn('Card preview close sound failed:', error);
+        }
+    }
+
     async startOracleWaiting(): Promise<void> {
         try {
             await this.stopOracleWaiting();

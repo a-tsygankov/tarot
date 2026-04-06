@@ -39,7 +39,7 @@ const FRAME_MARGIN = 42;
 const FRAME_BORDER = 6;
 const FRAME_PADDING_X = 64;
 const FRAME_PADDING_TOP = 52;
-const FRAME_PADDING_BOTTOM = 72;
+const FRAME_PADDING_BOTTOM = 78;
 const SAFE_LEFT = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING_X;
 const SAFE_TOP = FRAME_MARGIN + FRAME_BORDER + FRAME_PADDING_TOP;
 const SAFE_RIGHT = CANVAS_WIDTH - FRAME_MARGIN - FRAME_BORDER - FRAME_PADDING_X;
@@ -52,7 +52,7 @@ const MAX_VISIBLE_CARDS = 5;
 const CARD_ASPECT_RATIO = 200 / 345;
 const WATERMARK_HEIGHT = 34;
 const CARD_STAGE_PADDING = 28;
-const CARD_STAGE_LABEL_HEIGHT = 54;
+const CARD_STAGE_LABEL_HEIGHT = 64;
 
 export class ReadingImageExporter {
     planLayout(input: ReadingExportInput, appUrl = this.resolveAppUrl()): ReadingImageLayoutPlan {
@@ -123,7 +123,7 @@ export class ReadingImageExporter {
         this.paintReadingLines(context, initialLines, textStartX, textTop, besideLineHeight);
 
         const remainingTop = Math.max(
-            cardBlock.y + cardBlock.height + 34,
+            cardBlock.y + cardBlock.height + 42,
             textTop + initialLines.length * besideLineHeight + 22,
         );
         const spreadSummaryLines = plan.spreadLines;
@@ -314,7 +314,7 @@ export class ReadingImageExporter {
 
     private resolveCardBlockHeight(cardColumnWidth: number, cardCount: number): number {
         const base = Math.max(250, cardColumnWidth * 0.68);
-        return Math.round(base + 18 + Math.min(cardCount, 5) * 18);
+        return Math.round(base + 34 + Math.min(cardCount, 5) * 22);
     }
 
     private resolveCardStage(
@@ -335,7 +335,7 @@ export class ReadingImageExporter {
         const spacing = cardCount === 1 ? 0 : Math.min(preferredSpacing, maxSpacing);
         const clusterWidth = cardCount === 1 ? cardWidth : cardWidth + (cardCount - 1) * spacing;
         const clusterStartX = block.x + (block.width - clusterWidth) / 2;
-        const clusterY = block.y + CARD_STAGE_PADDING + Math.max(0, (stageHeight - cardHeight - 14) / 2);
+        const clusterY = block.y + CARD_STAGE_PADDING + Math.max(0, (stageHeight - cardHeight - 28) / 2);
 
         return {
             width: stageWidth,

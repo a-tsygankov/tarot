@@ -222,6 +222,7 @@ export class ReadingDisplay extends LitElement {
                                     .position=${dealt?.position ?? card.position}
                                     .reversed=${dealt?.reversed ?? false}
                                     .previewEnabled=${true}
+                                    .audioCueService=${this.services.audioCueService}
                                     .showMeta=${false}
                                     .width=${70}
                                     .height=${114}

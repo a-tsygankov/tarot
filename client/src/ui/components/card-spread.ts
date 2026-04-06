@@ -92,7 +92,7 @@ export class CardSpread extends LitElement {
             }
 
             .cards-row.three-card {
-                margin-bottom: 1.25em;
+                margin-bottom: 1.9em;
             }
 
             .card-slot {
@@ -118,7 +118,7 @@ export class CardSpread extends LitElement {
             .question-section {
                 width: 100%;
                 max-width: min(100%, 340px);
-                margin-top: 1.65em;
+                margin-top: 2.25em;
                 position: relative;
             }
 
@@ -135,13 +135,10 @@ export class CardSpread extends LitElement {
                 color: var(--text);
                 font-family: var(--font-body);
                 font-size: 0.92em;
-                resize: none;
                 outline: none;
-                transition: border-color 0.2s, min-height 0.2s ease, box-shadow 0.2s ease;
-                min-height: 2.8em;
-                max-height: 7.8em;
-                overflow: hidden;
-                line-height: 1.35;
+                transition: border-color 0.2s, box-shadow 0.2s ease;
+                height: 2.8em;
+                line-height: 1.2;
                 white-space: nowrap;
             }
 
@@ -181,7 +178,7 @@ export class CardSpread extends LitElement {
 
             .progress-section {
                 text-align: center;
-                margin-top: 1.8em;
+                margin-top: 2.35em;
             }
 
             .progress-text {
@@ -259,7 +256,7 @@ export class CardSpread extends LitElement {
     ];
 
     @property({ attribute: false }) services!: AppServices;
-    @query('.question-input') private _questionInput?: HTMLTextAreaElement;
+    @query('.question-input') private _questionInput?: HTMLInputElement;
 
     @state() private _dealtCards: Array<{ name: string; position: string; reversed: boolean }> = [];
     @state() private _question = '';
@@ -307,7 +304,7 @@ export class CardSpread extends LitElement {
                 `}
 
                 ${this._dealtCards.length < this._spreadSize ? html`
-                    <div class="dim-text" style="margin-top:0.9em;">Tap a card to draw</div>
+                    <div class="dim-text" style="margin-top:1.35em;">Tap a card to draw</div>
                 ` : this._loading ? html`
                     <div class="progress-section">
                         <div class="spinner spinner-lg"></div>
@@ -317,30 +314,26 @@ export class CardSpread extends LitElement {
                     <div class="question-section stack gap-sm">
                         <div class="question-label">Ask Your Question</div>
                         <div class="question-input-wrap">
-                        <textarea
+                        <input
                             class="question-input"
-                            rows="1"
                             placeholder="Ask a question (optional)..."
                             .value=${this._question}
                             @focus=${() => {
                                 this._questionFocused = true;
-                                this._resizeQuestionInput();
                                 if (this.services.sttService.isAvailable() && !this._sttStatus) {
                                     this._sttStatus = 'Tap the microphone to dictate your question.';
                                 }
                             }}
                             @blur=${() => {
                                 this._questionFocused = false;
-                                this._resizeQuestionInput();
                                 if (!this._sttListening && this._sttStatus === 'Tap the microphone to dictate your question.') {
                                     this._sttStatus = '';
                                 }
                             }}
                             @input=${(e: InputEvent) => {
-                                this._question = (e.target as HTMLTextAreaElement).value;
-                                this._resizeQuestionInput();
+                                this._question = (e.target as HTMLInputElement).value;
                             }}
-                        ></textarea>
+                        />
                         ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
                             <button
                                 class="mic-btn ${this._sttListening ? 'listening' : ''}"
@@ -410,6 +403,7 @@ export class CardSpread extends LitElement {
                         .reversed=${card.reversed}
                         .showMeta=${true}
                         .previewEnabled=${true}
+                        .audioCueService=${this.services.audioCueService}
                         .width=${this._pixelValue(cardLayout.width)}
                         .height=${this._pixelValue(cardLayout.height)}
                         .tiltDeg=${cardLayout.tilt}
@@ -430,6 +424,7 @@ export class CardSpread extends LitElement {
                     size=${this._spreadSize === 1 ? 'insight' : 'spread'}
                     .position=${position}
                     .previewEnabled=${true}
+                    .audioCueService=${this.services.audioCueService}
                     .activateOnTap=${canDeal}
                     .interactive=${canDeal}
                     .width=${this._pixelValue(cardLayout.width)}
@@ -542,20 +537,17 @@ export class CardSpread extends LitElement {
                 const clean = transcript.trim();
                 this._question = this._mergeTranscript(clean);
                 this._sttStatus = clean ? `Listening: ${clean}` : 'Listening...';
-                this._resizeQuestionInput();
             },
             onResult: (transcript) => {
                 const clean = transcript.trim();
                 this._question = this._mergeTranscript(clean);
                 this._sttStatus = clean ? 'Question captured.' : '';
                 this.updateComplete.then(() => {
-                    this._resizeQuestionInput();
                     this._questionInput?.focus();
                 });
             },
             onEnd: () => {
                 this._sttListening = false;
-                this._resizeQuestionInput();
                 if (this._sttStatus === 'Listening...') {
                     this._sttStatus = '';
                 }
@@ -575,16 +567,6 @@ export class CardSpread extends LitElement {
         return [this._sttBaseQuestion, transcript].filter(Boolean).join(this._sttBaseQuestion ? ' ' : '');
     }
 
-    private _resizeQuestionInput(): void {
-        const input = this._questionInput;
-        if (!input) {
-            return;
-        }
-
-        input.style.height = 'auto';
-        const compactHeight = 44;
-        input.style.height = `${compactHeight}px`;
-    }
 }
 
 declare global {
