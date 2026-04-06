@@ -124,10 +124,12 @@ export class CardSpread extends LitElement {
 
             .question-input-wrap {
                 position: relative;
+                width: 100%;
             }
 
             .question-input {
                 width: 100%;
+                box-sizing: border-box;
                 padding: 0.7em 3.2em 0.7em 0.8em;
                 background: var(--bg-card);
                 border: 1px solid var(--border);
