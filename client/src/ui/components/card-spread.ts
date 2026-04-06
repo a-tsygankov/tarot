@@ -81,7 +81,9 @@ export class CardSpread extends LitElement {
                 flex-direction: column;
                 align-items: center;
                 gap: 1.85em;
-                padding-top: 1em;
+                width: 100%;
+                box-sizing: border-box;
+                padding: 1em 1rem 0;
             }
 
             .cards-row {
@@ -116,8 +118,9 @@ export class CardSpread extends LitElement {
             }
 
             .question-section {
-                width: 100%;
-                max-width: min(100%, 340px);
+                width: min(100%, 340px);
+                box-sizing: border-box;
+                align-self: center;
                 margin-top: 2.25em;
                 position: relative;
             }
