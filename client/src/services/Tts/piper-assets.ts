@@ -1,24 +1,13 @@
 import { PIPER_VOICE_PATHS } from '@shared/config/piper-voice-map.js';
+import { PIPER_ONNX_RUNTIME_FILES, PIPER_PHONEMIZE_RUNTIME_FILES } from '@shared/config/piper-runtime.js';
 import type { PiperAssetManifest, PiperVoiceAssetManifestEntry } from '@shared/contracts/piper-contracts.js';
 import type { AppConfig } from '../../app/config.js';
-
-const ONNX_RUNTIME_FILES = [
-    'ort-wasm-simd-threaded.wasm',
-    'ort-wasm-simd.wasm',
-    'ort-wasm-threaded.wasm',
-    'ort-wasm.wasm',
-];
-
-const PIPER_RUNTIME_FILES = [
-    'piper_phonemize.data',
-    'piper_phonemize.wasm',
-];
 
 export function buildPiperRuntimeUrls(config: AppConfig): string[] {
     const base = trimTrailingSlash(config.tts.piper.assetBase);
     return [
-        ...ONNX_RUNTIME_FILES.map(file => `${base}/piper/runtime/onnx/${file}`),
-        ...PIPER_RUNTIME_FILES.map(file => `${base}/piper/runtime/piper/${file}`),
+        ...PIPER_ONNX_RUNTIME_FILES.map(file => `${base}/piper/runtime/onnx/${file}`),
+        ...PIPER_PHONEMIZE_RUNTIME_FILES.map(file => `${base}/piper/runtime/piper/${file}`),
     ];
 }
 
@@ -44,8 +33,8 @@ export function buildPiperManifest(config: AppConfig): PiperAssetManifest {
     return {
         version: config.version,
         runtime: {
-            onnx: ONNX_RUNTIME_FILES.map(file => `/piper/runtime/onnx/${file}`),
-            piper: PIPER_RUNTIME_FILES.map(file => `/piper/runtime/piper/${file}`),
+            onnx: [...PIPER_ONNX_RUNTIME_FILES].map(file => `/piper/runtime/onnx/${file}`),
+            piper: [...PIPER_PHONEMIZE_RUNTIME_FILES].map(file => `/piper/runtime/piper/${file}`),
         },
         voices,
     };

@@ -1,4 +1,5 @@
 import { PIPER_VOICE_PATHS } from '@shared/config/piper-voice-map.js';
+import { PIPER_ONNX_RUNTIME_FILES, PIPER_PHONEMIZE_RUNTIME_FILES } from '@shared/config/piper-runtime.js';
 import type { PiperAssetManifest } from '@shared/contracts/piper-contracts.js';
 
 type Env = {
@@ -6,17 +7,8 @@ type Env = {
     ALLOWED_ORIGINS?: string;
 };
 
-const ONNX_RUNTIME_FILES = new Set([
-    'ort-wasm-simd-threaded.wasm',
-    'ort-wasm-simd.wasm',
-    'ort-wasm-threaded.wasm',
-    'ort-wasm.wasm',
-]);
-
-const PIPER_RUNTIME_FILES = new Set([
-    'piper_phonemize.data',
-    'piper_phonemize.wasm',
-]);
+const ONNX_RUNTIME_FILES = new Set<string>(PIPER_ONNX_RUNTIME_FILES);
+const PIPER_RUNTIME_FILES = new Set<string>(PIPER_PHONEMIZE_RUNTIME_FILES);
 
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {

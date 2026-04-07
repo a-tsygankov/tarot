@@ -1,4 +1,5 @@
-import { TtsSession, HF_BASE, ONNX_BASE, WASM_BASE } from '@realtimex/piper-tts-web';
+import { TtsSession, HF_BASE, WASM_BASE } from '@realtimex/piper-tts-web';
+import { PIPER_ONNX_CDN_BASE, PIPER_ONNX_LEGACY_CDN_BASE } from '@shared/config/piper-runtime.js';
 
 type PiperWorkerRequest =
     | {
@@ -106,8 +107,13 @@ function rewritePiperUrl(url: string, assetBase: string): string | null {
         return `${assetBase}/piper/voices/${relative}`;
     }
 
-    if (url.startsWith(ONNX_BASE)) {
-        const filename = url.slice(ONNX_BASE.length);
+    if (url.startsWith(PIPER_ONNX_CDN_BASE)) {
+        const filename = url.slice(PIPER_ONNX_CDN_BASE.length);
+        return `${assetBase}/piper/runtime/onnx/${filename}`;
+    }
+
+    if (url.startsWith(PIPER_ONNX_LEGACY_CDN_BASE)) {
+        const filename = url.slice(PIPER_ONNX_LEGACY_CDN_BASE.length);
         return `${assetBase}/piper/runtime/onnx/${filename}`;
     }
 

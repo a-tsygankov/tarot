@@ -1,6 +1,7 @@
 import type { ITtsService, SpeakOptions } from './ITtsService.js';
 import type { IProgressReporter } from '../IProgressReporter.js';
 import type { AppConfig } from '../../app/config.js';
+import { PIPER_ONNX_RUNTIME_VERSION } from '@shared/config/piper-runtime.js';
 import { recordTtsDiagnostics } from './tts-diagnostics.js';
 
 type PiperWorkerRequest =
@@ -51,6 +52,7 @@ export class PiperTtsService implements ITtsService {
                 voiceId: options.voiceId,
                 textLength: text.length,
                 assetBase: this.config.tts.piper.assetBase,
+                onnxRuntimeVersion: PIPER_ONNX_RUNTIME_VERSION,
             },
         });
 
