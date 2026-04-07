@@ -30,7 +30,9 @@ async function init() {
 
     const services = createAppServices();
     const activeLanguage = CONFIG.languages.find(language => language.code === services.userContext.language);
-    void registerPiperServiceWorker(CONFIG, activeLanguage?.piperVoiceId ?? null);
+    if (!navigator.webdriver) {
+        void registerPiperServiceWorker(CONFIG, activeLanguage?.piperVoiceId ?? null);
+    }
 
     // Populate UserContext with IP geo data when available (non-blocking)
     services.geoService.fetchIpGeo().then(geo => {
