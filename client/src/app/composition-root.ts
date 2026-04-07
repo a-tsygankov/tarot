@@ -3,9 +3,9 @@ import { UserContext } from '../models/UserContext.js';
 import { GameContext } from '../models/GameContext.js';
 import { ApiService } from '../services/ApiService.js';
 import { BrowserSttService } from '../services/Stt/BrowserSttService.js';
-import { ElevenLabsTtsService } from '../services/Tts/ElevenLabsTtsService.js';
 import { BrowserTtsService } from '../services/Tts/BrowserTtsService.js';
 import { FallbackTtsService } from '../services/Tts/FallbackTtsService.js';
+import { PiperTtsService } from '../services/Tts/PiperTtsService.js';
 import { SpeechPreferencesResolver } from '../services/Speech/SpeechPreferencesResolver.js';
 import { SpeechService } from '../services/Speech/SpeechService.js';
 import { CompatibilityService } from '../services/Versioning/CompatibilityService.js';
@@ -44,12 +44,12 @@ export function createAppServices(): AppServices {
     // API
     const apiService = new ApiService(CONFIG, userContext);
 
-    // TTS — ElevenLabs with browser fallback
-    const elevenTts = new ElevenLabsTtsService(apiService, CONFIG);
+    // TTS — Piper in a Web Worker, with browser fallback.
     const browserTts = new BrowserTtsService();
+    const piperTts = new PiperTtsService(CONFIG);
     const ttsService: ITtsService = CONFIG.tts.fallbackToBrowser
-        ? new FallbackTtsService(elevenTts, browserTts)
-        : elevenTts;
+        ? new FallbackTtsService(piperTts, browserTts)
+        : piperTts;
     const speechPreferences = new SpeechPreferencesResolver(CONFIG);
     const speechService = new SpeechService(ttsService, speechPreferences);
     const audioCueService: IAudioCueService = new AudioCueService();

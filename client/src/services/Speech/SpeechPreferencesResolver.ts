@@ -18,7 +18,7 @@ export class SpeechPreferencesResolver {
         const languageConfig = this.findLanguageConfig(userContext.language);
         return {
             speed,
-            voiceId: languageConfig?.voiceId ?? undefined,
+            voiceId: languageConfig?.piperVoiceId ?? languageConfig?.voiceId ?? undefined,
         };
     }
 

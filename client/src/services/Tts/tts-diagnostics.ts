@@ -1,5 +1,5 @@
 export interface TtsDiagnosticsEntry {
-    provider: 'browser' | 'elevenlabs';
+    provider: 'browser' | 'elevenlabs' | 'piper';
     phase: 'start' | 'voices' | 'speak' | 'playback' | 'success' | 'error';
     timestamp: string;
     details: Record<string, unknown>;
