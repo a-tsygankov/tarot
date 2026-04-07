@@ -18,8 +18,12 @@ export class SpeechPreferencesResolver {
         const languageConfig = this.findLanguageConfig(userContext.language);
         return {
             speed,
-            voiceId: languageConfig?.piperVoiceId ?? languageConfig?.voiceId ?? undefined,
+            voiceId: languageConfig?.piperVoiceId ?? undefined,
         };
+    }
+
+    resolveElevenLabsVoiceId(userContext: UserContext): string | undefined {
+        return this.findLanguageConfig(userContext.language)?.elevenLabsVoiceId ?? undefined;
     }
 
     resolveVoiceEnabled(userContext: UserContext): boolean {

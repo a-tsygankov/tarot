@@ -547,14 +547,6 @@ export class SettingsPanel extends LitElement {
 
     private _syncVoiceSelection(): void {
         if (!this.services) return;
-
-        if (this.services.userContext.voicePreference === 'off') {
-            this.services.userContext.voiceId = null;
-            return;
-        }
-
-        const language = this.services.config.languages.find(lang => lang.code === this._language);
-        this.services.userContext.voiceId = language?.voiceId ?? null;
     }
 
     private _voiceLabelFromPreference(preference: 'female' | 'male' | 'off'): 'Female' | 'Male' | 'Off' {

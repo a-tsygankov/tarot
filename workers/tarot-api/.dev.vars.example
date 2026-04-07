@@ -5,4 +5,4 @@ GEMINI_KEY=your-gemini-api-key
 ANTHROPIC_KEY=your-anthropic-api-key
 ELEVENLABS_KEY=your-elevenlabs-api-key
 ANALYTICS_KEY=your-analytics-key
-DEFAULT_VOICE_ID=MKlLqCItoCkvdhrxgtLv
+DEFAULT_ELEVENLABS_VOICE_ID=MKlLqCItoCkvdhrxgtLv

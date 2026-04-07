@@ -81,7 +81,7 @@ export class ApiService implements IApiService {
             text,
             language,
             voiceId: voiceId ?? undefined,
-            model: this.config.tts.defaultModel,
+            model: this.config.tts.debugModel,
             speed: this.config.tts.defaultSpeed,
         };
 
@@ -242,7 +242,7 @@ export class ApiService implements IApiService {
     }
 }
 
-/** Thrown when ElevenLabs TTS quota is exceeded. */
+/** Thrown when debug/provider-backed TTS quota is exceeded. */
 export class TtsQuotaExceededError extends Error {
     constructor(public readonly reason: string) {
         super('TTS quota exceeded: ' + reason);

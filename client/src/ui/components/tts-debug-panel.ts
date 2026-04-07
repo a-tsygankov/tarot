@@ -79,6 +79,7 @@ export class TtsDebugPanel extends LitElement {
         const resolver = new SpeechPreferencesResolver(this.services.config);
         const locale = resolver.resolveBrowserLocale(this.services.userContext);
         const speakOptions = resolver.resolveSpeechOptions(this.services.userContext);
+        const elevenLabsVoiceId = resolver.resolveElevenLabsVoiceId(this.services.userContext);
         const languageConfig = this.services.config.languages.find(entry => entry.code === this.services.userContext.language);
 
         return html`
@@ -93,7 +94,8 @@ export class TtsDebugPanel extends LitElement {
                     <div class="grid">
                         <span class="k">App language</span><span class="v">${this.services.userContext.language}</span>
                         <span class="k">Browser locale</span><span class="v">${locale}</span>
-                        <span class="k">Configured voice id</span><span class="v">${speakOptions.voiceId ?? 'none'}</span>
+                        <span class="k">Piper voice id</span><span class="v">${speakOptions.voiceId ?? 'none'}</span>
+                        <span class="k">ElevenLabs voice id</span><span class="v">${elevenLabsVoiceId ?? 'none'}</span>
                         <span class="k">Language label</span><span class="v">${languageConfig?.label ?? 'unknown'}</span>
                         <span class="k">speechSynthesis</span><span class="v">${'speechSynthesis' in window ? 'available' : 'missing'}</span>
                     </div>
@@ -179,7 +181,10 @@ export class TtsDebugPanel extends LitElement {
     private async testElevenLabsTts(): Promise<void> {
         const resolver = new SpeechPreferencesResolver(this.services.config);
         const locale = resolver.resolveBrowserLocale(this.services.userContext);
-        const speakOptions = resolver.resolveSpeechOptions(this.services.userContext);
+        const speakOptions = {
+            ...resolver.resolveSpeechOptions(this.services.userContext),
+            voiceId: resolver.resolveElevenLabsVoiceId(this.services.userContext),
+        };
         this.testing = true;
         this.status = 'Testing ElevenLabs TTS...';
         try {

@@ -46,7 +46,7 @@ describe('SpeechService', () => {
         expect(speakAsync).toHaveBeenCalledWith(
             'Prediction',
             'ru-RU',
-            expect.objectContaining({ voiceId: 'GN4wbsbejSnGSa1AzjH5', speed: 1.5 }),
+            expect.objectContaining({ voiceId: 'ru_RU-irina-medium', speed: 1.5 }),
             undefined,
         );
     });
@@ -74,11 +74,11 @@ describe('SpeechService', () => {
 
         expect(calls[0]).toEqual(expect.objectContaining({
             lang: 'en-US',
-            options: expect.objectContaining({ voiceId: 'MKlLqCItoCkvdhrxgtLv' }),
+            options: expect.objectContaining({ voiceId: 'en_US-hfc_female-medium' }),
         }));
         expect(calls[1]).toEqual(expect.objectContaining({
             lang: 'ru-RU',
-            options: expect.objectContaining({ voiceId: 'GN4wbsbejSnGSa1AzjH5' }),
+            options: expect.objectContaining({ voiceId: 'ru_RU-irina-medium' }),
         }));
     });
 

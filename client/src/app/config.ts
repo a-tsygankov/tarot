@@ -7,8 +7,8 @@ export interface LanguageConfig {
     code: string;
     label: string;
     sttLang: string;
-    voiceId: string | null;
     piperVoiceId: string | null;
+    elevenLabsVoiceId?: string | null;
 }
 
 export interface ThemeConfig {
@@ -20,11 +20,11 @@ export const CONFIG = {
     apiBase: import.meta.env.DEV ? '' : 'https://tarot-api.tarotoracle.workers.dev',
 
     languages: [
-        { code: 'ENG', label: 'English',    sttLang: 'en-US', voiceId: 'MKlLqCItoCkvdhrxgtLv', piperVoiceId: 'en_US-hfc_female-medium' },
-        { code: 'RUS', label: 'Русский',    sttLang: 'ru-RU', voiceId: 'GN4wbsbejSnGSa1AzjH5', piperVoiceId: 'ru_RU-irina-medium' },
-        { code: 'UKR', label: 'Українська', sttLang: 'uk-UA', voiceId: null, piperVoiceId: 'uk_UA-ukrainian_tts-medium' },
-        { code: 'DEU', label: 'Deutsch',    sttLang: 'de-DE', voiceId: null, piperVoiceId: 'de_DE-mls-medium' },
-        { code: 'AZE', label: 'Azərbaycan', sttLang: 'az-AZ', voiceId: null, piperVoiceId: null },
+        { code: 'ENG', label: 'English',    sttLang: 'en-US', piperVoiceId: 'en_US-hfc_female-medium', elevenLabsVoiceId: 'MKlLqCItoCkvdhrxgtLv' },
+        { code: 'RUS', label: 'Русский',    sttLang: 'ru-RU', piperVoiceId: 'ru_RU-irina-medium', elevenLabsVoiceId: 'GN4wbsbejSnGSa1AzjH5' },
+        { code: 'UKR', label: 'Українська', sttLang: 'uk-UA', piperVoiceId: 'uk_UA-ukrainian_tts-medium', elevenLabsVoiceId: null },
+        { code: 'DEU', label: 'Deutsch',    sttLang: 'de-DE', piperVoiceId: 'de_DE-mls-medium', elevenLabsVoiceId: null },
+        { code: 'AZE', label: 'Azərbaycan', sttLang: 'az-AZ', piperVoiceId: null, elevenLabsVoiceId: null },
     ] satisfies LanguageConfig[],
 
     tones: ['Mystical', 'Ironic', 'Serious', 'Gentle'] as const,
@@ -40,7 +40,7 @@ export const CONFIG = {
 
     tts: {
         provider: 'piper' as const,
-        defaultModel: 'eleven_flash_v2_5',
+        debugModel: 'eleven_flash_v2_5',
         defaultSpeed: 1.0,
         fallbackToBrowser: true,
         piper: {

@@ -24,7 +24,7 @@ export async function callElevenLabs(
     model: string | null,
     speed: number | null,
 ): Promise<Response> {
-    const voice = voiceId || env.DEFAULT_VOICE_ID;
+    const voice = voiceId || env.DEFAULT_ELEVENLABS_VOICE_ID;
     const settings = WORKER_CONFIG.tts.defaultVoiceSettings;
     if (!env.ELEVENLABS_KEY) {
         throw new ElevenLabsApiError('Missing ElevenLabs API key', 500, 'tts_config_missing_key', {
