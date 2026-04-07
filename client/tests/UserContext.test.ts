@@ -16,7 +16,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock });
 vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid-1234' });
 
 // Mock navigator/screen/Intl
-vi.stubGlobal('navigator', { userAgent: 'test-agent', platform: 'test-platform' });
+vi.stubGlobal('navigator', { userAgent: 'test-agent', platform: 'test-platform', maxTouchPoints: 0 });
 vi.stubGlobal('screen', { width: 390, height: 844 });
 
 import { UserContext } from '../src/models/UserContext.js';
@@ -25,6 +25,10 @@ describe('UserContext', () => {
     beforeEach(() => {
         localStorageMock.clear();
         vi.clearAllMocks();
+        Object.defineProperty(globalThis, 'navigator', {
+            value: { userAgent: 'test-agent', platform: 'test-platform', maxTouchPoints: 0 },
+            configurable: true,
+        });
     });
 
     it('creates with default values', () => {
@@ -37,6 +41,7 @@ describe('UserContext', () => {
         expect(ctx.tone).toBe('Mystical');
         expect(ctx.theme).toBe('dusk');
         expect(ctx.voicePreference).toBe('female');
+        expect(ctx.ttsProvider).toBe('piper');
         expect(ctx.traits).toEqual({});
         expect(ctx.totalReadings).toBe(0);
     });
@@ -54,6 +59,7 @@ describe('UserContext', () => {
         ctx.language = 'RUS';
         ctx.tone = 'Ironic';
         ctx.voicePreference = 'off';
+        ctx.ttsProvider = 'browser';
         ctx.traits = { zodiac_sign: 'Scorpio' };
         ctx.totalReadings = 5;
         ctx.save();
@@ -65,8 +71,19 @@ describe('UserContext', () => {
         expect(ctx2.language).toBe('RUS');
         expect(ctx2.tone).toBe('Ironic');
         expect(ctx2.voicePreference).toBe('off');
+        expect(ctx2.ttsProvider).toBe('browser');
         expect(ctx2.traits).toEqual({ zodiac_sign: 'Scorpio' });
         expect(ctx2.totalReadings).toBe(5);
+    });
+
+    it('defaults to browser TTS on iPhone devices', () => {
+        Object.defineProperty(globalThis, 'navigator', {
+            value: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', platform: 'iPhone', maxTouchPoints: 5 },
+            configurable: true,
+        });
+
+        const ctx = new UserContext();
+        expect(ctx.ttsProvider).toBe('browser');
     });
 
     describe('applyAiUpdate', () => {

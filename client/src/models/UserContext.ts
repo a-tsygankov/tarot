@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
     tone: 'tarot_tone',
     theme: 'tarot_theme',
     voicePreference: 'tarot_voice_preference',
+    ttsProvider: 'tarot_tts_provider',
     ttsSpeed: 'tarot_tts_speed',
     font: 'tarot_font',
     userName: 'tarot_user_name',
@@ -33,6 +34,7 @@ export class UserContext implements IUserContext {
     tone = 'Mystical';
     theme = 'dusk';
     voicePreference: 'female' | 'male' | 'off' = 'female';
+    ttsProvider: 'browser' | 'piper';
     totalReadings = 0;
     deviceInfo: DeviceInfo;
 
@@ -40,6 +42,7 @@ export class UserContext implements IUserContext {
         this.uid = this.getOrCreateUid();
         this.sessionId = crypto.randomUUID();
         this.deviceInfo = this.buildDeviceInfo();
+        this.ttsProvider = this.detectDefaultTtsProvider();
     }
 
     /** Restore saved fields from localStorage. */
@@ -51,6 +54,7 @@ export class UserContext implements IUserContext {
         this.tone = localStorage.getItem(STORAGE_KEYS.tone) ?? 'Mystical';
         this.theme = localStorage.getItem(STORAGE_KEYS.theme) ?? 'dusk';
         this.voicePreference = (localStorage.getItem(STORAGE_KEYS.voicePreference) as 'female' | 'male' | 'off' | null) ?? 'female';
+        this.ttsProvider = (localStorage.getItem(STORAGE_KEYS.ttsProvider) as 'browser' | 'piper' | null) ?? this.detectDefaultTtsProvider();
         this.totalReadings = parseInt(localStorage.getItem(STORAGE_KEYS.totalReadings) ?? '0', 10);
         this.location = this.getApproxLocation();
 
@@ -74,6 +78,7 @@ export class UserContext implements IUserContext {
         localStorage.setItem(STORAGE_KEYS.tone, this.tone);
         localStorage.setItem(STORAGE_KEYS.theme, this.theme);
         localStorage.setItem(STORAGE_KEYS.voicePreference, this.voicePreference);
+        localStorage.setItem(STORAGE_KEYS.ttsProvider, this.ttsProvider);
         localStorage.setItem(STORAGE_KEYS.totalReadings, String(this.totalReadings));
         localStorage.setItem(STORAGE_KEYS.userTraits, JSON.stringify(this.traits));
     }
@@ -199,6 +204,14 @@ export class UserContext implements IUserContext {
             screenHeight: screen.height,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
+    }
+
+    private detectDefaultTtsProvider(): 'browser' | 'piper' {
+        const userAgent = navigator.userAgent ?? '';
+        const platform = navigator.platform ?? '';
+        const isIos = /iPhone|iPad|iPod/i.test(userAgent)
+            || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        return isIos ? 'browser' : 'piper';
     }
 
     private setIfNotNull(key: string, value: string | null): void {

@@ -268,6 +268,7 @@ export class SettingsPanel extends LitElement {
     @state() private _theme = 'dusk';
     @state() private _name = '';
     @state() private _voice = 'Female';
+    @state() private _ttsProvider: 'browser' | 'piper' = 'browser';
     @state() private _speed = 1.0;
     @state() private _font = 'Palatino';
     @state() private _deckStyle = 'classic';
@@ -288,6 +289,7 @@ export class SettingsPanel extends LitElement {
             this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
             this._fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
             this._voice = this._voiceLabelFromPreference(uc.voicePreference);
+            this._ttsProvider = uc.ttsProvider;
         }
     }
 
@@ -359,6 +361,21 @@ export class SettingsPanel extends LitElement {
                 </div>
 
                 <!-- Voice -->
+                <div class="panel">
+                    <div class="section-label">TTS Engine</div>
+                    <div class="option-grid">
+                        ${([
+                            { id: 'browser', label: 'Browser' },
+                            { id: 'piper', label: 'Piper' },
+                        ] as const).map(option => html`
+                            <button
+                                class="option-btn ${this._ttsProvider === option.id ? 'selected' : ''}"
+                                @click=${() => this._setTtsProvider(option.id)}
+                            >${option.label}</button>
+                        `)}
+                    </div>
+                </div>
+
                 <div class="panel">
                     <div class="section-label">Voice</div>
                     <div class="option-grid">
@@ -494,6 +511,14 @@ export class SettingsPanel extends LitElement {
         if (this.services) {
             this.services.userContext.voicePreference = this._voicePreferenceFromLabel(voice);
             this._syncVoiceSelection();
+            this.services.userContext.save();
+        }
+    }
+
+    private _setTtsProvider(provider: 'browser' | 'piper'): void {
+        this._ttsProvider = provider;
+        if (this.services) {
+            this.services.userContext.ttsProvider = provider;
             this.services.userContext.save();
         }
     }

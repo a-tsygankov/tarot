@@ -15,7 +15,7 @@ const localStorageMock = {
 
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock });
 vi.stubGlobal('crypto', { randomUUID: () => 'speech-uuid' });
-vi.stubGlobal('navigator', { userAgent: 'test-agent', platform: 'test-platform' });
+vi.stubGlobal('navigator', { userAgent: 'test-agent', platform: 'test-platform', maxTouchPoints: 0 });
 vi.stubGlobal('screen', { width: 390, height: 844 });
 
 describe('SpeechService', () => {
@@ -38,7 +38,7 @@ describe('SpeechService', () => {
         const userContext = new UserContext();
         userContext.language = 'RUS';
         userContext.voicePreference = 'female';
-        userContext.voiceId = null;
+        userContext.ttsProvider = 'piper';
         localStorage.setItem('tarot-tts-speed', '1.5');
 
         await service.speakReadingAsync('Prediction', userContext);
@@ -66,6 +66,7 @@ describe('SpeechService', () => {
         const service = new SpeechService(tts, new SpeechPreferencesResolver(CONFIG));
         const userContext = new UserContext();
         userContext.voicePreference = 'female';
+        userContext.ttsProvider = 'piper';
 
         await service.speakConversationAsync('First', userContext);
 
@@ -98,5 +99,32 @@ describe('SpeechService', () => {
         await expect(service.speakReadingAsync('Prediction', userContext))
             .rejects.toThrow('Voice playback is turned off in Settings.');
         expect(tts.speakAsync).not.toHaveBeenCalled();
+    });
+
+    it('routes browser TTS without Piper voice ids when browser engine is selected', async () => {
+        const speakAsync = vi.fn().mockResolvedValue(undefined);
+        const tts: ITtsService = {
+            isAvailable: vi.fn(() => true),
+            speakAsync,
+            stop: vi.fn(),
+            pause: vi.fn(),
+            resume: vi.fn(),
+        };
+
+        const service = new SpeechService(tts, new SpeechPreferencesResolver(CONFIG));
+        const userContext = new UserContext();
+        userContext.language = 'ENG';
+        userContext.voicePreference = 'female';
+        userContext.ttsProvider = 'browser';
+
+        await service.speakReadingAsync('Prediction', userContext);
+
+        expect(speakAsync).toHaveBeenCalledWith(
+            'Prediction',
+            'en-US',
+            expect.objectContaining({ provider: 'browser', speed: 1 }),
+            undefined,
+        );
+        expect(speakAsync.mock.calls[0]?.[2]?.voiceId).toBeUndefined();
     });
 });

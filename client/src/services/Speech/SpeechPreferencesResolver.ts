@@ -2,6 +2,8 @@ import type { AppConfig, LanguageConfig } from '../../app/config.js';
 import type { UserContext } from '../../models/UserContext.js';
 import type { SpeakOptions } from '../Tts/ITtsService.js';
 
+export type ResolvedTtsProvider = 'browser' | 'piper';
+
 export class SpeechPreferencesResolver {
     constructor(private readonly config: AppConfig) {}
 
@@ -9,16 +11,22 @@ export class SpeechPreferencesResolver {
         return this.findLanguageConfig(userContext.language)?.sttLang ?? 'en-US';
     }
 
+    resolveTtsProvider(userContext: UserContext): ResolvedTtsProvider {
+        return userContext.ttsProvider;
+    }
+
     resolveSpeechOptions(userContext: UserContext): SpeakOptions {
         const speed = this.resolveSpeed();
+        const provider = this.resolveTtsProvider(userContext);
         if (userContext.voicePreference === 'off') {
-            return { speed };
+            return { speed, provider };
         }
 
         const languageConfig = this.findLanguageConfig(userContext.language);
         return {
+            provider,
             speed,
-            voiceId: languageConfig?.piperVoiceId ?? undefined,
+            voiceId: provider === 'piper' ? languageConfig?.piperVoiceId ?? undefined : undefined,
         };
     }
 

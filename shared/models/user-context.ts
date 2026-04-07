@@ -14,6 +14,7 @@ export interface IUserContext {
     tone: string;
     theme: string;
     voicePreference: 'female' | 'male' | 'off';
+    ttsProvider: 'browser' | 'piper';
     totalReadings: number;
     deviceInfo: DeviceInfo;
 }

@@ -84,6 +84,7 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.log(`Deck: ${getCurrentDeckStyle()}`);
     console.log(`Font: ${localStorage.getItem('tarot-font') ?? 'Palatino'}${(localStorage.getItem('tarot-italic') ?? 'true') === 'true' ? ' (italic)' : ''}`);
     console.log(`TTS speed: ${localStorage.getItem('tarot-tts-speed') ?? '1.0'}×`);
+    console.log(`TTS engine: ${userContext.ttsProvider}`);
     console.log(`Voice preference: ${userContext.voicePreference}`);
     console.groupEnd();
 
