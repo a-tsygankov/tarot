@@ -3,9 +3,11 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import { BrowserTtsService } from '../../services/Tts/BrowserTtsService.js';
-import { ElevenLabsTtsService } from '../../services/Tts/ElevenLabsTtsService.js';
+import { PiperTtsService } from '../../services/Tts/PiperTtsService.js';
 import { clearTtsDiagnostics, getTtsDiagnostics, type TtsDiagnosticsEntry } from '../../services/Tts/tts-diagnostics.js';
 import { SpeechPreferencesResolver } from '../../services/Speech/SpeechPreferencesResolver.js';
+
+type DebugScenario = 'web-tts' | 'piper-tts' | 'web-stt';
 
 @customElement('tts-debug-panel')
 export class TtsDebugPanel extends LitElement {
@@ -16,10 +18,31 @@ export class TtsDebugPanel extends LitElement {
         .title { font-size: 1.28em; margin-bottom: .25em; }
         .section { font-size: 1em; margin-bottom: .55em; }
         .subtle { color: var(--text-dim); font-size: .85em; }
+        .header { display:flex; justify-content:space-between; align-items:flex-start; gap:.8em; }
         .row { display:flex; gap:.6em; flex-wrap:wrap; align-items:center; }
         .grid { display:grid; grid-template-columns:minmax(140px,auto) 1fr; gap:.35em .9em; font-size:.88em; }
         .k { color: var(--text-faint); }
         .v { color: var(--text); word-break: break-word; }
+        .scenario-grid { display:grid; gap:.5em; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+        .scenario-btn {
+            padding:.7em .8em;
+            border:1px solid var(--border);
+            border-radius:10px;
+            background:transparent;
+            color:var(--text-dim);
+            font:inherit;
+            text-align:left;
+            cursor:pointer;
+            transition: all .2s ease;
+        }
+        .scenario-btn:hover { border-color: var(--gold-dim); color: var(--text); }
+        .scenario-btn.selected {
+            border-color: var(--gold);
+            background: rgba(201,168,76,.08);
+            color: var(--gold);
+        }
+        .scenario-title { display:block; font-family: var(--font-display); color: inherit; margin-bottom:.15em; }
+        .scenario-copy { display:block; font-size:.8em; color: var(--text-faint); }
         .field {
             width: 100%;
             min-height: 7.5em;
@@ -52,14 +75,15 @@ export class TtsDebugPanel extends LitElement {
     @state() private sttListening = false;
     @state() private sttStatus = '';
     @state() private sttTranscript = '';
+    @state() private scenario: DebugScenario = 'web-tts';
 
     private readonly browserTts = new BrowserTtsService();
-    private elevenTts?: ElevenLabsTtsService;
+    private piperTts?: PiperTtsService;
     private unsubscribe?: () => void;
 
     override connectedCallback(): void {
         super.connectedCallback();
-        this.elevenTts = new ElevenLabsTtsService(this.services.apiService, this.services.config);
+        this.piperTts = new PiperTtsService(this.services.config);
         this.logs = getTtsDiagnostics();
         const onUpdate = () => { this.logs = getTtsDiagnostics(); };
         window.addEventListener('tarot:tts-diagnostics', onUpdate as EventListener);
@@ -79,14 +103,33 @@ export class TtsDebugPanel extends LitElement {
         const resolver = new SpeechPreferencesResolver(this.services.config);
         const locale = resolver.resolveBrowserLocale(this.services.userContext);
         const speakOptions = resolver.resolveSpeechOptions(this.services.userContext);
-        const elevenLabsVoiceId = resolver.resolveElevenLabsVoiceId(this.services.userContext);
         const languageConfig = this.services.config.languages.find(entry => entry.code === this.services.userContext.language);
+        const scenarioTitle = this.scenario === 'web-tts'
+            ? 'Web API TTS'
+            : this.scenario === 'piper-tts'
+                ? 'Piper TTS'
+                : 'Web API STT';
+        const scenarioStatus = this.scenario === 'web-stt' ? this.sttStatus : this.status;
 
         return html`
             <div class="root">
                 <div class="panel">
-                    <div class="title">TTS Debug</div>
-                    <div class="subtle">Run these checks on the iPhone itself. Results are logged below and also mirrored into the in-app console.</div>
+                    <div class="header">
+                        <div>
+                            <div class="title">Speech Debug</div>
+                            <div class="subtle">Run targeted checks for browser speech and Piper on the device itself.</div>
+                        </div>
+                        <button class="btn btn-ghost" @click=${this._close} aria-label="Close speech debug">✕</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="section">Scenario</div>
+                    <div class="scenario-grid">
+                        ${this._renderScenarioButton('web-tts', 'Web API TTS', 'speechSynthesis voice playback')}
+                        ${this._renderScenarioButton('piper-tts', 'Piper TTS', 'offline worker-backed playback')}
+                        ${this._renderScenarioButton('web-stt', 'Web API STT', 'browser speech recognition')}
+                    </div>
                 </div>
 
                 <div class="panel">
@@ -95,12 +138,13 @@ export class TtsDebugPanel extends LitElement {
                         <span class="k">App language</span><span class="v">${this.services.userContext.language}</span>
                         <span class="k">Browser locale</span><span class="v">${locale}</span>
                         <span class="k">Piper voice id</span><span class="v">${speakOptions.voiceId ?? 'none'}</span>
-                        <span class="k">ElevenLabs voice id</span><span class="v">${elevenLabsVoiceId ?? 'none'}</span>
                         <span class="k">Language label</span><span class="v">${languageConfig?.label ?? 'unknown'}</span>
                         <span class="k">speechSynthesis</span><span class="v">${'speechSynthesis' in window ? 'available' : 'missing'}</span>
+                        <span class="k">Active scenario</span><span class="v">${scenarioTitle}</span>
                     </div>
                 </div>
 
+                ${this.scenario !== 'web-stt' ? html`
                 <div class="panel">
                     <div class="section">Sample Text</div>
                     <textarea
@@ -109,30 +153,33 @@ export class TtsDebugPanel extends LitElement {
                         .value=${this.sampleText}
                         @input=${(e: InputEvent) => { this.sampleText = (e.target as HTMLTextAreaElement).value; }}
                     ></textarea>
-                </div>
+                </div>` : ''}
 
                 <div class="panel">
-                    <div class="section">Actions</div>
-                    <div class="row">
-                        <button class="btn btn-primary" ?disabled=${this.testing} @click=${this.testBrowserTts}>Test Browser TTS</button>
-                        <button class="btn" ?disabled=${this.testing} @click=${this.testElevenLabsTts}>Test ElevenLabs TTS</button>
-                        <button class="btn btn-ghost" @click=${this.clearLogs}>Clear Logs</button>
-                        <button class="btn btn-ghost" @click=${() => this.dispatchEvent(new CustomEvent('close'))}>Close</button>
-                    </div>
-                    ${this.status ? html`<div class="subtle" style="margin-top:.7em;">${this.status}</div>` : ''}
+                    <div class="section">${scenarioTitle}</div>
+                    ${this.scenario === 'web-stt' ? html`
+                        <div class="row">
+                            <button class="btn btn-primary" ?disabled=${this.testing || this.sttListening} @click=${this.startSttTest}>Start STT</button>
+                            <button class="btn" ?disabled=${!this.sttListening} @click=${this.stopSttTest}>Stop STT</button>
+                            <button class="btn btn-ghost" @click=${this.clearSttResult}>Clear Transcript</button>
+                        </div>
+                    ` : html`
+                        <div class="row">
+                            <button class="btn btn-primary" ?disabled=${this.testing} @click=${this._runScenarioTest}>
+                                ${this.scenario === 'web-tts' ? 'Test Web API TTS' : 'Test Piper TTS'}
+                            </button>
+                            <button class="btn btn-ghost" @click=${this.clearLogs}>Clear Logs</button>
+                        </div>
+                    `}
+                    ${scenarioStatus ? html`<div class="subtle" style="margin-top:.7em;">${scenarioStatus}</div>` : ''}
                 </div>
 
-                <div class="panel">
-                    <div class="section">STT Verification</div>
-                    <div class="row">
-                        <button class="btn btn-primary" ?disabled=${this.testing || this.sttListening} @click=${this.startSttTest}>Start STT</button>
-                        <button class="btn" ?disabled=${!this.sttListening} @click=${this.stopSttTest}>Stop STT</button>
-                        <button class="btn btn-ghost" @click=${this.clearSttResult}>Clear STT</button>
+                ${this.scenario === 'web-stt' ? html`
+                    <div class="panel">
+                        <div class="section">Transcript</div>
+                        <pre>${this.sttTranscript || 'No transcript captured yet.'}</pre>
                     </div>
-                    ${this.sttStatus ? html`<div class="subtle" style="margin-top:.7em;">${this.sttStatus}</div>` : ''}
-                    <div class="section" style="margin-top:1em;">Transcript</div>
-                    <pre>${this.sttTranscript || 'No transcript captured yet.'}</pre>
-                </div>
+                ` : ''}
 
                 <div class="panel">
                     <div class="section">Diagnostics</div>
@@ -153,16 +200,49 @@ export class TtsDebugPanel extends LitElement {
         `;
     }
 
+    private _renderScenarioButton(id: DebugScenario, title: string, copy: string) {
+        return html`
+            <button
+                class="scenario-btn ${this.scenario === id ? 'selected' : ''}"
+                @click=${() => this._selectScenario(id)}
+            >
+                <span class="scenario-title">${title}</span>
+                <span class="scenario-copy">${copy}</span>
+            </button>
+        `;
+    }
+
+    private _selectScenario(scenario: DebugScenario): void {
+        this.scenario = scenario;
+        this.status = '';
+        if (scenario !== 'web-stt') {
+            this.sttListening = false;
+            this.sttStatus = '';
+        }
+    }
+
+    private _close = (): void => {
+        this.dispatchEvent(new CustomEvent('close'));
+    };
+
     private clearLogs = (): void => {
         clearTtsDiagnostics();
         this.status = '';
+    };
+
+    private _runScenarioTest = async (): Promise<void> => {
+        if (this.scenario === 'piper-tts') {
+            await this.testPiperTts();
+            return;
+        }
+        await this.testBrowserTts();
     };
 
     private async testBrowserTts(): Promise<void> {
         const resolver = new SpeechPreferencesResolver(this.services.config);
         const locale = resolver.resolveBrowserLocale(this.services.userContext);
         this.testing = true;
-        this.status = 'Testing browser TTS...';
+        this.status = 'Testing Web API TTS...';
         try {
             await this.browserTts.speakAsync(
                 this.sampleText.trim() || 'This is a browser speech test for Tarot Oracle.',
@@ -178,22 +258,19 @@ export class TtsDebugPanel extends LitElement {
         }
     }
 
-    private async testElevenLabsTts(): Promise<void> {
+    private async testPiperTts(): Promise<void> {
         const resolver = new SpeechPreferencesResolver(this.services.config);
         const locale = resolver.resolveBrowserLocale(this.services.userContext);
-        const speakOptions = {
-            ...resolver.resolveSpeechOptions(this.services.userContext),
-            voiceId: resolver.resolveElevenLabsVoiceId(this.services.userContext),
-        };
+        const speakOptions = resolver.resolveSpeechOptions(this.services.userContext);
         this.testing = true;
-        this.status = 'Testing ElevenLabs TTS...';
+        this.status = 'Testing Piper TTS...';
         try {
-            await this.elevenTts?.speakAsync(
-                this.sampleText.trim() || 'This is an ElevenLabs speech test for Tarot Oracle.',
+            await this.piperTts?.speakAsync(
+                this.sampleText.trim() || 'This is a Piper speech test for Tarot Oracle.',
                 locale,
                 speakOptions,
             );
-            this.status = 'ElevenLabs TTS completed.';
+            this.status = 'Piper TTS completed.';
         } catch (error) {
             this.status = error instanceof Error ? error.message : String(error);
         } finally {

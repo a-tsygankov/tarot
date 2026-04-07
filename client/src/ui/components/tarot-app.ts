@@ -337,7 +337,7 @@ export class TarotApp extends LitElement {
                 </div>
                 <div class="bar-right">
                     ${this._debugMode ? html`
-                        <button class="console-toggle" @click=${() => this.navigate('tts-debug')}>
+                        <button class="console-toggle" @click=${this._toggleTtsDebug}>
                             TTS
                         </button>
                         <button class="console-toggle" @click=${() => this.navigate('dashboard')}>
@@ -473,6 +473,10 @@ export class TarotApp extends LitElement {
 
     private _toggleConsole(): void {
         this._debugConsole?.toggle();
+    }
+
+    private _toggleTtsDebug(): void {
+        this.navigate(this._screen === 'tts-debug' ? 'home' : 'tts-debug');
     }
 
     private _toggleSettings(): void {
