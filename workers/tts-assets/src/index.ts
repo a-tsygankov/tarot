@@ -26,7 +26,7 @@ export default {
             if (!ONNX_RUNTIME_FILES.has(filename)) {
                 return notFound(request, env);
             }
-            return proxyAsset(`piper/runtime/onnx/${filename}`, request, env, 'application/wasm');
+            return proxyAsset(`piper/runtime/onnx/${filename}`, request, env, guessContentType(filename));
         }
 
         if (url.pathname.startsWith('/piper/runtime/piper/')) {
@@ -99,8 +99,14 @@ function jsonResponse(body: PiperAssetManifest, headers: Headers): Response {
 }
 
 function guessContentType(path: string): string {
+    if (path.endsWith('.mjs') || path.endsWith('.js')) {
+        return 'text/javascript; charset=utf-8';
+    }
     if (path.endsWith('.json')) {
         return 'application/json';
+    }
+    if (path.endsWith('.wasm')) {
+        return 'application/wasm';
     }
     if (path.endsWith('.onnx')) {
         return 'application/octet-stream';
