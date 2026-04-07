@@ -23,9 +23,18 @@ interface PendingRequest {
 export class PiperTtsService implements ITtsService {
     private worker: Worker | null = null;
     private audio: HTMLAudioElement | null = null;
+    private audioObjectUrl: string | null = null;
+    private playbackUnlocked = false;
+    private unlockListenersAttached = false;
     private readonly pending = new Map<string, PendingRequest>();
 
-    constructor(private readonly config: AppConfig) {}
+    private readonly unlockPlaybackHandler = () => {
+        void this.unlockPlaybackAsync();
+    };
+
+    constructor(private readonly config: AppConfig) {
+        this.attachUnlockListeners();
+    }
 
     isAvailable(): boolean {
         return typeof Worker !== 'undefined' && typeof Audio !== 'undefined';
@@ -68,14 +77,19 @@ export class PiperTtsService implements ITtsService {
         progress?.report('Playing Piper audio...', 80);
         const blob = new Blob([audioBuffer], { type: 'audio/wav' });
         const objectUrl = URL.createObjectURL(blob);
-        const audio = new Audio(objectUrl);
+        await this.unlockPlaybackAsync();
+        this.resetAudioObjectUrl();
+
+        const audio = this.getAudio();
+        audio.src = objectUrl;
+        audio.load();
         this.audio = audio;
+        this.audioObjectUrl = objectUrl;
         audio.playbackRate = options.speed ?? this.config.tts.defaultSpeed;
 
         return new Promise((resolve, reject) => {
             audio.onended = () => {
-                URL.revokeObjectURL(objectUrl);
-                this.audio = null;
+                this.resetAudioObjectUrl();
                 options.onEnd?.();
                 progress?.report('Done', 100);
                 recordTtsDiagnostics({
@@ -87,8 +101,6 @@ export class PiperTtsService implements ITtsService {
                 resolve();
             };
             audio.onerror = () => {
-                URL.revokeObjectURL(objectUrl);
-                this.audio = null;
                 const error = new Error('Piper audio playback failed');
                 recordTtsDiagnostics({
                     provider: 'piper',
@@ -96,19 +108,19 @@ export class PiperTtsService implements ITtsService {
                     timestamp: new Date().toISOString(),
                     details: { voiceId: options.voiceId, message: error.message },
                 });
+                this.resetAudioObjectUrl();
                 reject(error);
             };
 
             options.onStart?.();
             audio.play().catch((error) => {
-                URL.revokeObjectURL(objectUrl);
-                this.audio = null;
                 recordTtsDiagnostics({
                     provider: 'piper',
                     phase: 'error',
                     timestamp: new Date().toISOString(),
                     details: { voiceId: options.voiceId, message: error instanceof Error ? error.message : String(error) },
                 });
+                this.resetAudioObjectUrl();
                 reject(error);
             });
         });
@@ -127,8 +139,8 @@ export class PiperTtsService implements ITtsService {
         if (this.audio) {
             this.audio.pause();
             this.audio.currentTime = 0;
-            this.audio = null;
         }
+        this.resetAudioObjectUrl();
     }
 
     pause(): void {
@@ -174,6 +186,81 @@ export class PiperTtsService implements ITtsService {
         }
 
         return this.worker;
+    }
+
+    private getAudio(): HTMLAudioElement {
+        if (!this.audio) {
+            const audio = new Audio();
+            audio.preload = 'auto';
+            audio.setAttribute('playsinline', 'true');
+            this.audio = audio;
+        }
+        return this.audio;
+    }
+
+    private async unlockPlaybackAsync(): Promise<void> {
+        if (this.playbackUnlocked || typeof window === 'undefined') {
+            return;
+        }
+
+        const audio = this.getAudio();
+        const previousMuted = audio.muted;
+        const previousVolume = audio.volume;
+        const previousSrc = audio.src;
+
+        audio.muted = true;
+        audio.volume = 0;
+        audio.src = 'data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAAGhgAAGhoaJCQkJDExMTFBQUFBTU1NTVpaWlpqamprd3d3d4SEhISQkJCQnZ2dnamppbW1tbnBwcHOzs7O0dHR0d3d3eLi4uLv7+/v////AAAAAExhdmM1OC4zNQAAAAAAAAAAAAAAACQCkAAAAAAAAAaG4G5bJQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uQxAADBc0xK9QAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+        try {
+            await audio.play();
+            audio.pause();
+            audio.currentTime = 0;
+            this.playbackUnlocked = true;
+            this.detachUnlockListeners();
+        } catch {
+            // Keep listeners attached and retry on the next real user gesture.
+        } finally {
+            audio.muted = previousMuted;
+            audio.volume = previousVolume;
+            audio.src = previousSrc;
+        }
+    }
+
+    private attachUnlockListeners(): void {
+        if (this.unlockListenersAttached || typeof window === 'undefined') {
+            return;
+        }
+
+        const options: AddEventListenerOptions = { passive: true };
+        window.addEventListener('pointerdown', this.unlockPlaybackHandler, options);
+        window.addEventListener('touchend', this.unlockPlaybackHandler, options);
+        window.addEventListener('click', this.unlockPlaybackHandler, options);
+        window.addEventListener('keydown', this.unlockPlaybackHandler);
+        this.unlockListenersAttached = true;
+    }
+
+    private detachUnlockListeners(): void {
+        if (!this.unlockListenersAttached || typeof window === 'undefined') {
+            return;
+        }
+
+        window.removeEventListener('pointerdown', this.unlockPlaybackHandler);
+        window.removeEventListener('touchend', this.unlockPlaybackHandler);
+        window.removeEventListener('click', this.unlockPlaybackHandler);
+        window.removeEventListener('keydown', this.unlockPlaybackHandler);
+        this.unlockListenersAttached = false;
+    }
+
+    private resetAudioObjectUrl(): void {
+        if (this.audioObjectUrl) {
+            URL.revokeObjectURL(this.audioObjectUrl);
+            this.audioObjectUrl = null;
+        }
+        if (this.audio) {
+            this.audio.removeAttribute('src');
+            this.audio.load();
+        }
     }
 
     private sendWorkerRequest(message: PiperWorkerRequest, progress?: IProgressReporter): Promise<ArrayBuffer | void> {
