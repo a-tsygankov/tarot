@@ -15,6 +15,9 @@ export default defineConfig({
         outDir: 'dist',
         sourcemap: true,
     },
+    worker: {
+        format: 'es',
+    },
     server: {
         port: 3000,
         open: process.env.PLAYWRIGHT !== '1',
