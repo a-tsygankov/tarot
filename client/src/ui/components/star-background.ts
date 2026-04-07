@@ -41,9 +41,9 @@ export class StarBackground extends LitElement {
 
     static override styles = css`
         :host {
-            position: fixed;
+            position: absolute;
             inset: 0;
-            z-index: -1;
+            z-index: 0;
             pointer-events: none;
             overflow: hidden;
             display: block;

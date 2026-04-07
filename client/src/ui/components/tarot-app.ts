@@ -32,12 +32,17 @@ export class TarotApp extends LitElement {
                 flex-direction: column;
                 min-height: 100dvh;
                 background: var(--bg);
+                position: relative;
+                overflow: hidden;
+                isolation: isolate;
             }
 
             .screen {
                 flex: 1;
                 padding: 0 1em 4.5em; /* extra bottom padding for bottom bar */
                 animation: fadeIn 0.3s ease-out;
+                position: relative;
+                z-index: 1;
             }
 
             .home-content {
