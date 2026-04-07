@@ -49,19 +49,152 @@ export class TarotApp extends LitElement {
                 min-height: 70vh;
                 text-align: center;
                 padding: 2em 1em;
+                position: relative;
+            }
+
+            .hero-lockup {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 1.1em;
+                max-width: 320px;
+            }
+
+            .oracle-seal {
+                position: relative;
+                width: 142px;
+                aspect-ratio: 1;
+                border-radius: 50%;
+                display: grid;
+                place-items: center;
+                background:
+                    radial-gradient(circle at 50% 50%, rgba(201, 168, 76, 0.18), rgba(201, 168, 76, 0.04) 42%, transparent 70%),
+                    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.06), transparent 34%);
+                box-shadow:
+                    0 0 0 1px rgba(201, 168, 76, 0.26),
+                    0 0 28px rgba(201, 168, 76, 0.14);
+            }
+
+            .oracle-seal::before,
+            .oracle-seal::after {
+                content: '';
+                position: absolute;
+                inset: 10px;
+                border-radius: 50%;
+                border: 1px solid rgba(201, 168, 76, 0.32);
+            }
+
+            .oracle-seal::after {
+                inset: 22px;
+                border-color: rgba(201, 168, 76, 0.18);
+            }
+
+            .seal-stars {
+                position: absolute;
+                inset: 0;
+                display: block;
+                color: var(--gold-light);
+                pointer-events: none;
+                filter: drop-shadow(0 0 10px rgba(201, 168, 76, 0.24));
+            }
+
+            .seal-star {
+                position: absolute;
+                font-size: 0.9rem;
+                opacity: 0.82;
+            }
+
+            .seal-star.top { top: 10px; left: 50%; transform: translateX(-50%); }
+            .seal-star.left { left: 12px; top: 50%; transform: translateY(-50%); }
+            .seal-star.right { right: 12px; top: 50%; transform: translateY(-50%); }
+            .seal-star.bottom { bottom: 10px; left: 50%; transform: translateX(-50%); }
+
+            .oracle-eye {
+                position: relative;
+                width: 74px;
+                height: 104px;
+                border-radius: 38px / 52px;
+                border: 1px solid rgba(201, 168, 76, 0.68);
+                background:
+                    radial-gradient(circle at 50% 34%, rgba(240, 216, 120, 0.12), transparent 25%),
+                    linear-gradient(180deg, rgba(22, 14, 36, 0.92), rgba(11, 8, 20, 0.98));
+                box-shadow:
+                    inset 0 0 24px rgba(201, 168, 76, 0.08),
+                    0 18px 30px rgba(0, 0, 0, 0.24);
+                transform: translateY(-2px);
+            }
+
+            .oracle-eye::before {
+                content: '';
+                position: absolute;
+                inset: 12px 18px;
+                border-radius: 50%;
+                border: 1px solid rgba(201, 168, 76, 0.46);
+            }
+
+            .oracle-eye::after {
+                content: '';
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                background: radial-gradient(circle at 35% 35%, var(--gold-light), var(--gold));
+                transform: translate(-50%, -50%);
+                box-shadow:
+                    0 0 18px rgba(201, 168, 76, 0.45),
+                    0 0 0 6px rgba(201, 168, 76, 0.12);
+            }
+
+            .oracle-arc,
+            .oracle-arc-secondary {
+                position: absolute;
+                border-radius: 50%;
+                border: 1px solid rgba(201, 168, 76, 0.36);
+            }
+
+            .oracle-arc {
+                width: 106px;
+                height: 106px;
+                border-left-color: transparent;
+                border-bottom-color: transparent;
+                transform: rotate(20deg);
+            }
+
+            .oracle-arc-secondary {
+                width: 126px;
+                height: 126px;
+                border-right-color: transparent;
+                border-top-color: transparent;
+                transform: rotate(18deg);
+                opacity: 0.65;
             }
 
             .oracle-title {
                 font-family: var(--font-display);
-                font-size: 2em;
+                font-size: clamp(2.1rem, 5vw, 2.8rem);
                 color: var(--gold);
-                letter-spacing: 0.08em;
+                letter-spacing: 0.06em;
+                line-height: 0.92;
+                text-transform: uppercase;
+                text-shadow: 0 4px 22px rgba(0, 0, 0, 0.2);
+            }
+
+            .oracle-kicker {
+                font-family: var(--font-display);
+                color: var(--text-dim);
+                letter-spacing: 0.28em;
+                text-transform: uppercase;
+                font-size: 0.72rem;
             }
 
             .oracle-subtitle {
                 color: var(--text-dim);
                 font-style: italic;
-                max-width: 280px;
+                max-width: 320px;
+                line-height: 1.65;
+                font-size: 0.98rem;
             }
 
             .spread-choices {
@@ -418,9 +551,23 @@ export class TarotApp extends LitElement {
     private _renderHome() {
         return html`
             <div class="home-content fade-in">
-                <div class="oracle-title">✦ Tarot Oracle ✦</div>
-                <div class="oracle-subtitle">
-                    Ask the cards a question, or let fate guide your reading.
+                <div class="hero-lockup">
+                    <div class="oracle-seal" aria-hidden="true">
+                        <div class="seal-stars">
+                            <span class="seal-star top">✦</span>
+                            <span class="seal-star left">✦</span>
+                            <span class="seal-star right">✦</span>
+                            <span class="seal-star bottom">✦</span>
+                        </div>
+                        <div class="oracle-arc-secondary"></div>
+                        <div class="oracle-arc"></div>
+                        <div class="oracle-eye"></div>
+                    </div>
+                    <div class="oracle-kicker">Velvet Arcana</div>
+                    <div class="oracle-title">Tarot Oracle</div>
+                    <div class="oracle-subtitle">
+                        Ask the cards a question, or let fate guide your reading through a more ornate celestial ritual.
+                    </div>
                 </div>
 
                 <div class="spread-choices">
