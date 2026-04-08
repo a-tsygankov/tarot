@@ -1,5 +1,6 @@
 import type { ITtsService, SpeakOptions } from './ITtsService.js';
 import type { IProgressReporter } from '../IProgressReporter.js';
+import { recordTtsDiagnostics } from './tts-diagnostics.js';
 
 /**
  * Browser speechSynthesis TTS fallback.
@@ -18,32 +19,97 @@ export class BrowserTtsService implements ITtsService {
         options: SpeakOptions = {},
         progress?: IProgressReporter,
     ): Promise<void> {
+        recordTtsDiagnostics({
+            provider: 'browser',
+            phase: 'start',
+            timestamp: new Date().toISOString(),
+            details: {
+                requestedLanguage: lang,
+                textLength: text.length,
+                speed: options.speed ?? 1.0,
+            },
+        });
         const voices = await this.ensureVoicesLoaded();
+        const voice = this.findBestVoice(voices, lang);
+        recordTtsDiagnostics({
+            provider: 'browser',
+            phase: 'voices',
+            timestamp: new Date().toISOString(),
+            details: {
+                requestedLanguage: lang,
+                voicesAvailable: voices.length,
+                selectedVoiceName: voice?.name ?? null,
+                selectedVoiceLang: voice?.lang ?? null,
+                selectedVoiceLocalService: voice?.localService ?? null,
+                selectedVoiceDefault: voice?.default ?? null,
+            },
+        });
 
         return new Promise((resolve, reject) => {
             if (!this.isAvailable()) {
-                reject(new Error('speechSynthesis not available'));
+                const error = new Error('speechSynthesis not available');
+                recordTtsDiagnostics({
+                    provider: 'browser',
+                    phase: 'error',
+                    timestamp: new Date().toISOString(),
+                    details: { message: error.message },
+                });
+                reject(error);
                 return;
             }
 
             progress?.report('Speaking via browser...', 0);
             const utterance = new SpeechSynthesisUtterance(text);
-            const voice = this.findBestVoice(voices, lang);
             utterance.lang = voice?.lang ?? lang;
             if (voice) {
                 utterance.voice = voice;
             }
             utterance.rate = options.speed ?? 1.0;
             utterance.onstart = () => {
+                recordTtsDiagnostics({
+                    provider: 'browser',
+                    phase: 'speak',
+                    timestamp: new Date().toISOString(),
+                    details: {
+                        utteranceLang: utterance.lang,
+                        voiceName: utterance.voice?.name ?? null,
+                        voiceLang: utterance.voice?.lang ?? null,
+                        speaking: speechSynthesis.speaking,
+                        pending: speechSynthesis.pending,
+                    },
+                });
                 progress?.report('Speaking...', 50);
                 options.onStart?.();
             };
             utterance.onend = () => {
+                recordTtsDiagnostics({
+                    provider: 'browser',
+                    phase: 'success',
+                    timestamp: new Date().toISOString(),
+                    details: {
+                        utteranceLang: utterance.lang,
+                        voiceName: utterance.voice?.name ?? null,
+                        voiceLang: utterance.voice?.lang ?? null,
+                    },
+                });
                 progress?.report('Done', 100);
                 options.onEnd?.();
                 resolve();
             };
-            utterance.onerror = (e) => reject(new Error('Speech error: ' + e.error));
+            utterance.onerror = (e) => {
+                recordTtsDiagnostics({
+                    provider: 'browser',
+                    phase: 'error',
+                    timestamp: new Date().toISOString(),
+                    details: {
+                        utteranceLang: utterance.lang,
+                        voiceName: utterance.voice?.name ?? null,
+                        voiceLang: utterance.voice?.lang ?? null,
+                        error: e.error,
+                    },
+                });
+                reject(new Error('Speech error: ' + e.error));
+            };
 
             speechSynthesis.cancel();
             speechSynthesis.speak(utterance);

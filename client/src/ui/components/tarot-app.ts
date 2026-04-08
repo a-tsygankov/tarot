@@ -12,11 +12,12 @@ import './followup-chat.js';
 import './settings-panel.js';
 import './voice-mode.js';
 import './debug-console.js';
+import './tts-debug-panel.js';
 import './star-background.js';
 import './dashboard-panel-lite.js';
 import type { DebugConsole } from './debug-console.js';
 
-export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard';
+export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard' | 'tts-debug';
 
 /**
  * Root application shell — manages screen navigation and services.
@@ -31,12 +32,17 @@ export class TarotApp extends LitElement {
                 flex-direction: column;
                 min-height: 100dvh;
                 background: var(--bg);
+                position: relative;
+                overflow: hidden;
+                isolation: isolate;
             }
 
             .screen {
                 flex: 1;
                 padding: 0 1em 4.5em; /* extra bottom padding for bottom bar */
                 animation: fadeIn 0.3s ease-out;
+                position: relative;
+                z-index: 1;
             }
 
             .home-content {
@@ -48,19 +54,135 @@ export class TarotApp extends LitElement {
                 min-height: 70vh;
                 text-align: center;
                 padding: 2em 1em;
+                position: relative;
+            }
+
+            .hero-lockup {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 1.1em;
+                max-width: 340px;
+            }
+
+            .oracle-mark {
+                position: relative;
+                width: 220px;
+                height: 180px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                filter: drop-shadow(0 22px 42px rgba(0, 0, 0, 0.3));
+            }
+
+            .oracle-ring {
+                position: absolute;
+                border-radius: 50%;
+                border: 3px solid rgba(236, 207, 134, 0.88);
+                box-shadow:
+                    0 0 0 1px rgba(236, 207, 134, 0.18),
+                    0 0 18px rgba(236, 207, 134, 0.36),
+                    0 0 38px rgba(236, 207, 134, 0.18),
+                    inset 0 0 12px rgba(255, 243, 210, 0.18);
+            }
+
+            .oracle-ring.main {
+                width: 120px;
+                height: 120px;
+                top: 16px;
+            }
+
+            .oracle-ring.echo {
+                width: 130px;
+                height: 130px;
+                top: 11px;
+                opacity: 0.28;
+                transform: scaleX(1.06);
+            }
+
+            .oracle-glow {
+                position: absolute;
+                width: 160px;
+                height: 58px;
+                bottom: 28px;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(255, 236, 191, 0.3), rgba(201, 168, 76, 0.12) 42%, transparent 72%);
+            }
+
+            .oracle-horizon {
+                position: absolute;
+                bottom: 53px;
+                width: 126px;
+                height: 3px;
+                border-radius: 999px;
+                background: linear-gradient(90deg, transparent, rgba(240, 216, 120, 0.9), transparent);
+                box-shadow: 0 0 16px rgba(240, 216, 120, 0.4);
+            }
+
+            .oracle-flare {
+                position: absolute;
+                width: 12px;
+                height: 12px;
+                bottom: 49px;
+                border-radius: 50%;
+                background: radial-gradient(circle, #fff4d7, rgba(236, 207, 134, 0.78) 56%, transparent 76%);
+                box-shadow: 0 0 18px rgba(255, 236, 191, 0.5);
+            }
+
+            .oracle-orbit,
+            .oracle-orbit-secondary {
+                position: absolute;
+                bottom: 8px;
+                width: 168px;
+                height: 50px;
+                border-radius: 50%;
+                border: 2px solid rgba(236, 207, 134, 0.42);
+                border-left-color: transparent;
+                border-right-color: transparent;
+                transform: rotate(10deg);
+                opacity: 0.9;
+            }
+
+            .oracle-orbit-secondary {
+                width: 146px;
+                height: 38px;
+                bottom: 17px;
+                opacity: 0.5;
+                transform: rotate(-6deg);
+            }
+
+            .oracle-mist {
+                position: absolute;
+                inset: 44px 10px 18px;
+                background:
+                    radial-gradient(circle at 50% 58%, rgba(255, 226, 182, 0.14), transparent 18%),
+                    radial-gradient(circle at 50% 80%, rgba(201, 168, 76, 0.08), transparent 40%);
             }
 
             .oracle-title {
                 font-family: var(--font-display);
-                font-size: 2em;
+                font-size: clamp(2.1rem, 5vw, 2.8rem);
                 color: var(--gold);
-                letter-spacing: 0.08em;
+                letter-spacing: 0.06em;
+                line-height: 0.92;
+                text-transform: uppercase;
+                text-shadow: 0 4px 22px rgba(0, 0, 0, 0.2);
+            }
+
+            .oracle-kicker {
+                font-family: var(--font-display);
+                color: var(--text-dim);
+                letter-spacing: 0.28em;
+                text-transform: uppercase;
+                font-size: 0.72rem;
             }
 
             .oracle-subtitle {
                 color: var(--text-dim);
                 font-style: italic;
-                max-width: 280px;
+                max-width: 320px;
+                line-height: 1.65;
+                font-size: 0.98rem;
             }
 
             .spread-choices {
@@ -336,6 +458,9 @@ export class TarotApp extends LitElement {
                 </div>
                 <div class="bar-right">
                     ${this._debugMode ? html`
+                        <button class="console-toggle" @click=${this._toggleTtsDebug}>
+                            TTS
+                        </button>
                         <button class="console-toggle" @click=${() => this.navigate('dashboard')}>
                             Dash
                         </button>
@@ -401,15 +526,35 @@ export class TarotApp extends LitElement {
                         @close=${() => this.navigate('home')}
                     ></dashboard-panel>
                 `;
+            case 'tts-debug':
+                return html`
+                    <tts-debug-panel
+                        .services=${this._services}
+                        @close=${() => this.navigate('home')}
+                    ></tts-debug-panel>
+                `;
         }
     }
 
     private _renderHome() {
         return html`
             <div class="home-content fade-in">
-                <div class="oracle-title">✦ Tarot Oracle ✦</div>
-                <div class="oracle-subtitle">
-                    Ask the cards a question, or let fate guide your reading.
+                <div class="hero-lockup">
+                    <div class="oracle-mark" aria-hidden="true">
+                        <div class="oracle-mist"></div>
+                        <div class="oracle-ring echo"></div>
+                        <div class="oracle-ring main"></div>
+                        <div class="oracle-glow"></div>
+                        <div class="oracle-horizon"></div>
+                        <div class="oracle-flare"></div>
+                        <div class="oracle-orbit"></div>
+                        <div class="oracle-orbit-secondary"></div>
+                    </div>
+                    <div class="oracle-kicker">Velvet Arcana</div>
+                    <div class="oracle-title">Tarot Oracle</div>
+                    <div class="oracle-subtitle">
+                    Ask the cards a question, or let fate guide your reading through a more ornate celestial ritual.
+                    </div>
                 </div>
 
                 <div class="spread-choices">
@@ -462,6 +607,10 @@ export class TarotApp extends LitElement {
 
     private _toggleConsole(): void {
         this._debugConsole?.toggle();
+    }
+
+    private _toggleTtsDebug(): void {
+        this.navigate(this._screen === 'tts-debug' ? 'home' : 'tts-debug');
     }
 
     private _toggleSettings(): void {

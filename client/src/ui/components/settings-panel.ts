@@ -20,9 +20,7 @@ const FONT_SIZE_OPTIONS = [
     { id: 'xlarge', label: 'XL', value: '1.3em' },
 ] as const;
 
-const SPEED_OPTIONS = ['0.75×', '1×', '1.5×', '2×'] as const;
-const SPEED_VALUES: Record<string, number> = { '0.75×': 0.75, '1×': 1.0, '1.5×': 1.5, '2×': 2.0 };
-const SPEED_LABELS: Record<number, string> = { 0.75: '0.75×', 1: '1×', 1.5: '1.5×', 2: '2×' };
+const SPEED_STEPS = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
 
 /**
  * Settings panel — language, tone, theme, voice, speed, font, profile.
@@ -119,6 +117,35 @@ export class SettingsPanel extends LitElement {
             .theme-preview {
                 display: flex;
                 gap: 0.5em;
+            }
+
+            .speed-slider-wrap {
+                display: flex;
+                flex-direction: column;
+                gap: 0.7em;
+            }
+
+            .speed-slider {
+                width: 100%;
+                accent-color: var(--gold);
+            }
+
+            .speed-scale {
+                display: grid;
+                grid-template-columns: repeat(6, minmax(0, 1fr));
+                gap: 0.35em;
+                font-size: 0.72em;
+                color: var(--text-faint);
+            }
+
+            .speed-scale span {
+                text-align: center;
+            }
+
+            .speed-current {
+                color: var(--gold);
+                font-family: var(--font-display);
+                font-size: 0.92em;
             }
 
             .theme-swatch {
@@ -241,6 +268,7 @@ export class SettingsPanel extends LitElement {
     @state() private _theme = 'dusk';
     @state() private _name = '';
     @state() private _voice = 'Female';
+    @state() private _ttsProvider: 'browser' | 'piper' = 'browser';
     @state() private _speed = 1.0;
     @state() private _font = 'Palatino';
     @state() private _deckStyle = 'classic';
@@ -261,11 +289,12 @@ export class SettingsPanel extends LitElement {
             this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
             this._fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
             this._voice = this._voiceLabelFromPreference(uc.voicePreference);
+            this._ttsProvider = uc.ttsProvider;
         }
     }
 
     override render() {
-        const speedLabel = SPEED_LABELS[this._speed] ?? '1×';
+        const speedLabel = `${Number(this._speed).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}×`;
 
         return html`
             <div class="settings-container">
@@ -333,6 +362,21 @@ export class SettingsPanel extends LitElement {
 
                 <!-- Voice -->
                 <div class="panel">
+                    <div class="section-label">TTS Engine</div>
+                    <div class="option-grid">
+                        ${([
+                            { id: 'browser', label: 'Browser' },
+                            { id: 'piper', label: 'Piper' },
+                        ] as const).map(option => html`
+                            <button
+                                class="option-btn ${this._ttsProvider === option.id ? 'selected' : ''}"
+                                @click=${() => this._setTtsProvider(option.id)}
+                            >${option.label}</button>
+                        `)}
+                    </div>
+                </div>
+
+                <div class="panel">
                     <div class="section-label">Voice</div>
                     <div class="option-grid">
                         ${(['Female', 'Male', 'Off'] as const).map(v => html`
@@ -347,13 +391,20 @@ export class SettingsPanel extends LitElement {
                 <!-- Speed -->
                 <div class="panel">
                     <div class="section-label">Speed</div>
-                    <div class="option-grid">
-                        ${SPEED_OPTIONS.map(s => html`
-                            <button
-                                class="option-btn ${speedLabel === s ? 'selected' : ''}"
-                                @click=${() => this._setSpeed(s)}
-                            >${s}</button>
-                        `)}
+                    <div class="speed-slider-wrap">
+                        <div class="speed-current">${speedLabel}</div>
+                        <input
+                            class="speed-slider"
+                            type="range"
+                            min="0.75"
+                            max="2"
+                            step="0.25"
+                            .value=${String(this._speed)}
+                            @input=${(e: InputEvent) => this._setSpeed((e.target as HTMLInputElement).value)}
+                        />
+                        <div class="speed-scale">
+                            ${SPEED_STEPS.map(step => html`<span>${step}×</span>`)}
+                        </div>
                     </div>
                 </div>
 
@@ -464,10 +515,19 @@ export class SettingsPanel extends LitElement {
         }
     }
 
-    private _setSpeed(label: string): void {
-        const value = SPEED_VALUES[label] ?? 1.0;
+    private _setTtsProvider(provider: 'browser' | 'piper'): void {
+        this._ttsProvider = provider;
+        if (this.services) {
+            this.services.userContext.ttsProvider = provider;
+            this.services.userContext.save();
+        }
+    }
+
+    private _setSpeed(rawValue: string): void {
+        const parsed = parseFloat(rawValue);
+        const value = Number.isFinite(parsed) ? Math.min(2, Math.max(0.75, parsed)) : 1.0;
         this._speed = value;
-        localStorage.setItem('tarot-tts-speed', String(value));
+        localStorage.setItem('tarot-tts-speed', value.toFixed(2));
     }
 
     private _setFont(fontId: string): void {
@@ -512,14 +572,6 @@ export class SettingsPanel extends LitElement {
 
     private _syncVoiceSelection(): void {
         if (!this.services) return;
-
-        if (this.services.userContext.voicePreference === 'off') {
-            this.services.userContext.voiceId = null;
-            return;
-        }
-
-        const language = this.services.config.languages.find(lang => lang.code === this._language);
-        this.services.userContext.voiceId = language?.voiceId ?? null;
     }
 
     private _voiceLabelFromPreference(preference: 'female' | 'male' | 'off'): 'Female' | 'Male' | 'Off' {

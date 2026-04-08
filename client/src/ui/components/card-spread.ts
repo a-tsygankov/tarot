@@ -35,6 +35,7 @@ interface SpreadLayout {
     cards: CardLayout[];
     gap: string;
     wrapStyle?: string; // additional CSS for the cards-row container
+    rowClass?: string;
 }
 
 const SPREAD_LAYOUTS: Record<number, SpreadLayout> = {
@@ -45,7 +46,8 @@ const SPREAD_LAYOUTS: Record<number, SpreadLayout> = {
         ],
     },
     3: {
-        gap: '0.6em',
+        gap: '0.25em',
+        rowClass: 'three-card',
         cards: [
             { width: '110px', height: '180px', tilt: -15, offsetY: 8 },
             { width: '120px', height: '196px', tilt: 0, offsetY: 0 },
@@ -94,7 +96,16 @@ export class CardSpread extends LitElement {
             }
 
             .cards-row.three-card {
+                flex-wrap: nowrap;
+                align-items: flex-start;
+                width: 100%;
+                max-width: min(100%, 360px);
                 margin-bottom: 1.9em;
+            }
+
+            .cards-row.three-card .card-slot:nth-child(2),
+            .cards-row.three-card .card-slot:nth-child(3) {
+                margin-left: -0.45em;
             }
 
             .card-slot {
@@ -257,6 +268,23 @@ export class CardSpread extends LitElement {
             tarot-card {
                 touch-action: manipulation;
             }
+
+            @media (max-width: 430px) {
+                .spread-container {
+                    gap: 1.55em;
+                    padding-inline: 0.45rem;
+                }
+
+                .cards-row.three-card {
+                    max-width: min(100%, 332px);
+                    margin-bottom: 2.1em;
+                }
+
+                .cards-row.three-card .card-slot:nth-child(2),
+                .cards-row.three-card .card-slot:nth-child(3) {
+                    margin-left: -0.9em;
+                }
+            }
         `,
     ];
 
@@ -283,6 +311,17 @@ export class CardSpread extends LitElement {
     }
 
     private get _layout(): SpreadLayout {
+        if (this._spreadSize === 3 && this._isNarrowPortrait()) {
+            return {
+                gap: '0',
+                rowClass: 'three-card',
+                cards: [
+                    { width: '92px', height: '150px', tilt: -12, offsetY: 8 },
+                    { width: '104px', height: '170px', tilt: 0, offsetY: 0 },
+                    { width: '92px', height: '150px', tilt: 12, offsetY: 8 },
+                ],
+            };
+        }
         return SPREAD_LAYOUTS[this._spreadSize] ?? SPREAD_LAYOUTS[3];
     }
 
@@ -303,7 +342,7 @@ export class CardSpread extends LitElement {
                 </div>
 
                 ${this._spreadSize === 5 ? this._renderCrossLayout() : html`
-                    <div class="cards-row ${this._spreadSize === 3 ? 'three-card' : ''}" style=${rowStyle}>
+                    <div class="cards-row ${layout.rowClass ?? ''}" style=${rowStyle}>
                         ${this._positions.map((pos, i) => this._renderCardSlot(pos, i))}
                     </div>
                 `}
@@ -514,6 +553,14 @@ export class CardSpread extends LitElement {
     private _pixelValue(value: string): number {
         const parsed = parseFloat(value);
         return Number.isFinite(parsed) ? parsed : 110;
+    }
+
+    private _isNarrowPortrait(): boolean {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+
+        return window.innerWidth <= 430 && window.innerHeight >= window.innerWidth;
     }
 
     private _toggleQuestionDictation(): void {

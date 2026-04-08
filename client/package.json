@@ -17,7 +17,9 @@
     "lint": "eslint src/ --ext .ts"
   },
   "dependencies": {
-    "lit": "^3.2.0"
+    "@realtimex/piper-tts-web": "^1.1.1",
+    "lit": "^3.2.0",
+    "onnxruntime-web": "1.24.3"
   },
   "devDependencies": {
     "@playwright/test": "latest",

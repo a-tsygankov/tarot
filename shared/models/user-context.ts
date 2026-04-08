@@ -13,8 +13,8 @@ export interface IUserContext {
     language: string;
     tone: string;
     theme: string;
-    voiceId: string | null;
     voicePreference: 'female' | 'male' | 'off';
+    ttsProvider: 'browser' | 'piper';
     totalReadings: number;
     deviceInfo: DeviceInfo;
 }
