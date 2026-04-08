@@ -296,7 +296,9 @@ export class TtsDebugPanel extends LitElement {
             },
             onResult: (transcript) => {
                 this.sttTranscript = transcript.trim();
+                this.sttListening = false;
                 this.sttStatus = 'STT captured final transcript.';
+                this.services.sttService.stop();
             },
             onEnd: () => {
                 this.sttListening = false;
@@ -307,6 +309,7 @@ export class TtsDebugPanel extends LitElement {
             onError: (error) => {
                 this.sttListening = false;
                 this.sttStatus = `STT error: ${error}`;
+                this.services.sttService.stop();
             },
         });
     };

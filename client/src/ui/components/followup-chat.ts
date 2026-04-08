@@ -339,6 +339,9 @@ export class FollowupChat extends LitElement {
         )?.sttLang ?? 'en-US';
 
         stt.start(lang, {
+            onStart: () => {
+                this._listening = true;
+            },
             onResult: (text: string) => {
                 this._input = text;
                 this._listening = false;
