@@ -81,6 +81,7 @@ export async function handleAdminUserDetail(request: Request, env: Env, uidFragm
             user: {
                 ...user,
                 userTraits: userTraits?.traits ?? {},
+                latestDevice: userSessions.at(-1)?.device ?? null,
             },
             games: userGames.slice().reverse().map(summarizeGame),
             sessions,

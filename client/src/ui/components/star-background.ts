@@ -1,43 +1,62 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, query } from 'lit/decorators.js';
 
-interface StarLayerPoint {
+interface StarPoint {
     x: number;
     y: number;
-    r: number;
+    radius: number;
     opacity: number;
-    fill: string;
+    hue: number;
+    twinkleSpeed: number;
+    twinklePhase: number;
+    depth: number;
+    cross: boolean;
 }
 
-function buildLayer(count: number, seed: number, fill: string, sizeRange: [number, number], opacityBase: number): StarLayerPoint[] {
-    return Array.from({ length: count }, (_, index) => {
-        const x = (index * (31 + seed) + seed * 7) % 100;
-        const y = (index * (47 + seed) + seed * 11) % 100;
-        const spread = ((index * 13 + seed) % 10) / 10;
-        return {
-            x,
-            y,
-            r: sizeRange[0] + ((sizeRange[1] - sizeRange[0]) * spread),
-            opacity: opacityBase + (((index + seed) % 6) * 0.05),
-            fill,
-        };
-    });
+interface NebulaCloud {
+    x: number;
+    y: number;
+    radiusX: number;
+    radiusY: number;
+    rotation: number;
+    opacity: number;
+    color: string;
+    depth: number;
+}
+
+interface GlowCluster {
+    x: number;
+    y: number;
+    radius: number;
+    opacity: number;
+    depth: number;
+}
+
+function createSeededRandom(seed: number): () => number {
+    let value = seed >>> 0;
+    return () => {
+        value = (value * 1664525 + 1013904223) >>> 0;
+        return value / 4294967296;
+    };
 }
 
 /**
- * Decorative starfield background with layered parallax drift.
- * Keeps layout deterministic and cheap to render on mobile.
+ * Deep-space starfield background tuned for phones.
+ * Uses canvas so Safari/Chrome mobile render the same layer reliably.
  */
 @customElement('star-background')
 export class StarBackground extends LitElement {
-    @state() private _offsetX = 0;
-    @state() private _offsetY = 0;
+    @query('canvas') private _canvas!: HTMLCanvasElement;
 
-    private readonly _layers = {
-        far: buildLayer(34, 3, '#ffffff', [0.9, 1.8], 0.18),
-        mid: buildLayer(24, 9, '#d8b35a', [1.1, 2.3], 0.24),
-        near: buildLayer(14, 17, '#fff1c3', [1.5, 3.2], 0.32),
-    };
+    private readonly _random = createSeededRandom(70231);
+    private readonly _stars = this._buildStars();
+    private readonly _nebulae = this._buildNebulae();
+    private readonly _clusters = this._buildGlowClusters();
+    private _offsetX = 0;
+    private _offsetY = 0;
+    private _rafId: number | null = null;
+    private _resizeObserver: ResizeObserver | null = null;
+    private _needsRender = true;
 
     static override styles = css`
         :host {
@@ -49,96 +68,16 @@ export class StarBackground extends LitElement {
             display: block;
         }
 
-        .field {
-            position: absolute;
-            inset: 0;
-        }
-
-        .nebula {
-            position: absolute;
-            inset: -14%;
-            background:
-                radial-gradient(circle at 20% 18%, rgba(201, 168, 76, 0.14), transparent 26%),
-                radial-gradient(circle at 78% 24%, rgba(117, 88, 171, 0.16), transparent 24%),
-                radial-gradient(circle at 50% 72%, rgba(201, 168, 76, 0.1), transparent 34%),
-                radial-gradient(circle at 52% 48%, rgba(255, 238, 201, 0.03), transparent 40%);
-            opacity: 0.95;
-            transform: translate3d(calc(var(--parallax-x, 0px) * -0.4), calc(var(--parallax-y, 0px) * -0.25), 0);
-        }
-
-        .layer {
-            position: absolute;
-            inset: 0;
-            transition: transform 180ms ease-out;
-        }
-
-        .layer.far {
-            transform: translate3d(calc(var(--parallax-x, 0px) * 0.18), calc(var(--parallax-y, 0px) * 0.12), 0);
-        }
-
-        .layer.mid {
-            transform: translate3d(calc(var(--parallax-x, 0px) * 0.38), calc(var(--parallax-y, 0px) * 0.26), 0);
-        }
-
-        .layer.near {
-            transform: translate3d(calc(var(--parallax-x, 0px) * 0.64), calc(var(--parallax-y, 0px) * 0.46), 0);
-        }
-
-        .star {
-            position: absolute;
-            border-radius: 999px;
-            transform-origin: center;
-            box-shadow: 0 0 10px currentColor;
-        }
-
-        .star.cross::before,
-        .star.cross::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            background: currentColor;
-            border-radius: 999px;
-            transform: translate(-50%, -50%);
-            opacity: 0.78;
-        }
-
-        .star.cross::before {
-            width: 220%;
-            height: 0.8px;
-        }
-
-        .star.cross::after {
-            width: 0.8px;
-            height: 220%;
-        }
-
-        .twinkle {
-            animation: twinkle 5.6s ease-in-out infinite;
-        }
-
-        .twinkle.alt {
-            animation-duration: 7.2s;
-        }
-
-        .twinkle.slow {
-            animation-duration: 9.4s;
-        }
-
-        @keyframes twinkle {
-            0%, 100% { opacity: 0.35; transform: scale(0.92); }
-            50% { opacity: 1; transform: scale(1.18); }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            opacity: 0.94;
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .layer,
-            .nebula,
-            .twinkle,
-            .twinkle.alt,
-            .twinkle.slow {
-                animation: none;
-                transition: none;
-                transform: none;
+            canvas {
+                opacity: 0.9;
             }
         }
     `;
@@ -149,53 +88,237 @@ export class StarBackground extends LitElement {
         window.addEventListener('deviceorientation', this._handleDeviceOrientation, { passive: true });
     }
 
+    override firstUpdated(): void {
+        this._resizeObserver = new ResizeObserver(() => {
+            this._resizeCanvas();
+            this._scheduleRender();
+        });
+        this._resizeObserver.observe(this);
+        this._resizeCanvas();
+        this._scheduleRender();
+    }
+
     override disconnectedCallback(): void {
         super.disconnectedCallback();
         window.removeEventListener('pointermove', this._handlePointerMove);
         window.removeEventListener('deviceorientation', this._handleDeviceOrientation);
+        this._resizeObserver?.disconnect();
+        if (this._rafId != null) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
     }
 
     override render() {
-        return html`
-            <div class="field" style=${`--parallax-x:${this._offsetX}px; --parallax-y:${this._offsetY}px;`}>
-                <div class="nebula"></div>
-                <div class="layer far">
-                    ${this._layers.far.map((star, index) => this._renderStar(star, index))}
-                </div>
-                <div class="layer mid">
-                    ${this._layers.mid.map((star, index) => this._renderStar(star, index, index % 5 === 0))}
-                </div>
-                <div class="layer near">
-                    ${this._layers.near.map((star, index) => this._renderStar(star, index, true))}
-                </div>
-            </div>
-        `;
+        return html`<canvas aria-hidden="true"></canvas>`;
     }
 
-    private _renderStar(star: StarLayerPoint, index: number, cross = false) {
-        const classes = [
-            'star',
-            'twinkle',
-            index % 2 === 0 ? 'alt' : '',
-            index % 3 === 0 ? 'slow' : '',
-            cross ? 'cross' : '',
-        ].filter(Boolean).join(' ');
+    private _buildStars(): StarPoint[] {
+        const stars: StarPoint[] = [];
+        for (let index = 0; index < 220; index += 1) {
+            const sizeBias = this._random();
+            const radius = sizeBias > 0.92
+                ? 2.4 + this._random() * 2.8
+                : sizeBias > 0.72
+                    ? 1.2 + this._random() * 1.8
+                    : 0.35 + this._random() * 1.1;
+            stars.push({
+                x: this._random(),
+                y: this._random(),
+                radius,
+                opacity: 0.18 + this._random() * 0.7,
+                hue: 210 + this._random() * 25,
+                twinkleSpeed: 0.4 + this._random() * 1.4,
+                twinklePhase: this._random() * Math.PI * 2,
+                depth: 0.2 + this._random() * 1.1,
+                cross: radius > 1.9 && this._random() > 0.42,
+            });
+        }
+        return stars;
+    }
 
-        return html`
-            <span
-                class=${classes}
-                style=${[
-                    `left:${star.x}%`,
-                    `top:${star.y}%`,
-                    `width:${star.r}px`,
-                    `height:${star.r}px`,
-                    `background:${star.fill}`,
-                    `color:${star.fill}`,
-                    `opacity:${star.opacity}`,
-                ].join(';')}
-                aria-hidden="true"
-            ></span>
-        `;
+    private _buildNebulae(): NebulaCloud[] {
+        return [
+            { x: 0.46, y: 0.2, radiusX: 0.18, radiusY: 0.33, rotation: -0.28, opacity: 0.22, color: '#8fb1ff', depth: 0.15 },
+            { x: 0.53, y: 0.48, radiusX: 0.12, radiusY: 0.42, rotation: 0.2, opacity: 0.28, color: '#7a97eb', depth: 0.34 },
+            { x: 0.66, y: 0.68, radiusX: 0.16, radiusY: 0.3, rotation: 0.42, opacity: 0.2, color: '#90b5ff', depth: 0.48 },
+            { x: 0.33, y: 0.1, radiusX: 0.12, radiusY: 0.22, rotation: -0.5, opacity: 0.12, color: '#b1c0ff', depth: 0.12 },
+            { x: 0.74, y: 0.46, radiusX: 0.11, radiusY: 0.2, rotation: 0.18, opacity: 0.13, color: '#d9e2ff', depth: 0.55 },
+        ];
+    }
+
+    private _buildGlowClusters(): GlowCluster[] {
+        return [
+            { x: 0.18, y: 0.34, radius: 0.055, opacity: 0.28, depth: 0.75 },
+            { x: 0.67, y: 0.58, radius: 0.07, opacity: 0.22, depth: 0.82 },
+            { x: 0.57, y: 0.42, radius: 0.06, opacity: 0.16, depth: 0.68 },
+        ];
+    }
+
+    private _resizeCanvas(): void {
+        if (!this._canvas) {
+            return;
+        }
+
+        const bounds = this.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.8);
+        this._canvas.width = Math.max(1, Math.floor(bounds.width * dpr));
+        this._canvas.height = Math.max(1, Math.floor(bounds.height * dpr));
+        const context = this._canvas.getContext('2d');
+        if (context) {
+            context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+    }
+
+    private _scheduleRender(): void {
+        this._needsRender = true;
+        if (this._rafId != null) {
+            return;
+        }
+
+        const renderFrame = (time: number) => {
+            this._rafId = null;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const shouldAnimate = !reducedMotion;
+            if (this._needsRender || shouldAnimate) {
+                this._renderScene(time);
+                this._needsRender = false;
+            }
+            if (shouldAnimate) {
+                this._rafId = requestAnimationFrame(renderFrame);
+            }
+        };
+
+        this._rafId = requestAnimationFrame(renderFrame);
+    }
+
+    private _renderScene(time: number): void {
+        if (!this._canvas) {
+            return;
+        }
+
+        const context = this._canvas.getContext('2d');
+        if (!context) {
+            return;
+        }
+
+        const width = this._canvas.clientWidth || 1;
+        const height = this._canvas.clientHeight || 1;
+        const elapsed = time * 0.001;
+        context.clearRect(0, 0, width, height);
+
+        const baseGradient = context.createLinearGradient(0, 0, 0, height);
+        baseGradient.addColorStop(0, '#11172b');
+        baseGradient.addColorStop(0.45, '#0d1428');
+        baseGradient.addColorStop(1, '#050912');
+        context.fillStyle = baseGradient;
+        context.fillRect(0, 0, width, height);
+
+        this._drawNebulae(context, width, height);
+        this._drawGlowClusters(context, width, height);
+        this._drawStars(context, width, height, elapsed);
+
+        const vignette = context.createRadialGradient(
+            width * 0.5,
+            height * 0.42,
+            height * 0.1,
+            width * 0.5,
+            height * 0.5,
+            height * 0.76,
+        );
+        vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        vignette.addColorStop(1, 'rgba(0, 0, 0, 0.42)');
+        context.fillStyle = vignette;
+        context.fillRect(0, 0, width, height);
+    }
+
+    private _drawNebulae(context: CanvasRenderingContext2D, width: number, height: number): void {
+        for (const cloud of this._nebulae) {
+            const offsetX = this._offsetX * cloud.depth * 0.65;
+            const offsetY = this._offsetY * cloud.depth * 0.45;
+            const centerX = (cloud.x * width) + offsetX;
+            const centerY = (cloud.y * height) + offsetY;
+            const radiusX = cloud.radiusX * width;
+            const radiusY = cloud.radiusY * height;
+
+            context.save();
+            context.translate(centerX, centerY);
+            context.rotate(cloud.rotation);
+            context.scale(1, radiusY / Math.max(radiusX, 1));
+
+            const gradient = context.createRadialGradient(0, 0, 0, 0, 0, radiusX);
+            gradient.addColorStop(0, this._alpha(cloud.color, cloud.opacity));
+            gradient.addColorStop(0.42, this._alpha(cloud.color, cloud.opacity * 0.46));
+            gradient.addColorStop(1, this._alpha(cloud.color, 0));
+
+            context.fillStyle = gradient;
+            context.fillRect(-radiusX, -radiusX, radiusX * 2, radiusX * 2);
+            context.restore();
+        }
+    }
+
+    private _drawGlowClusters(context: CanvasRenderingContext2D, width: number, height: number): void {
+        for (const cluster of this._clusters) {
+            const offsetX = this._offsetX * cluster.depth * 0.82;
+            const offsetY = this._offsetY * cluster.depth * 0.58;
+            const centerX = (cluster.x * width) + offsetX;
+            const centerY = (cluster.y * height) + offsetY;
+            const radius = cluster.radius * Math.min(width, height);
+
+            const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+            gradient.addColorStop(0, `rgba(180, 205, 255, ${cluster.opacity})`);
+            gradient.addColorStop(0.4, `rgba(124, 154, 236, ${cluster.opacity * 0.5})`);
+            gradient.addColorStop(1, 'rgba(90, 120, 220, 0)');
+            context.fillStyle = gradient;
+            context.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+        }
+    }
+
+    private _drawStars(context: CanvasRenderingContext2D, width: number, height: number, elapsed: number): void {
+        for (const star of this._stars) {
+            const offsetX = this._offsetX * star.depth;
+            const offsetY = this._offsetY * star.depth * 0.74;
+            const x = (star.x * width) + offsetX;
+            const y = (star.y * height) + offsetY;
+            const pulse = 0.84 + (Math.sin(elapsed * star.twinkleSpeed + star.twinklePhase) * 0.16);
+            const radius = star.radius * pulse;
+            const alpha = Math.min(1, star.opacity * pulse);
+            const color = `hsla(${star.hue}, 85%, 88%, ${alpha})`;
+
+            const glow = context.createRadialGradient(x, y, 0, x, y, radius * 6);
+            glow.addColorStop(0, color);
+            glow.addColorStop(0.22, `hsla(${star.hue}, 95%, 85%, ${alpha * 0.6})`);
+            glow.addColorStop(1, `hsla(${star.hue}, 95%, 70%, 0)`);
+            context.fillStyle = glow;
+            context.fillRect(x - radius * 6, y - radius * 6, radius * 12, radius * 12);
+
+            context.beginPath();
+            context.fillStyle = `hsla(${star.hue}, 100%, 96%, ${Math.min(1, alpha + 0.08)})`;
+            context.arc(x, y, Math.max(0.45, radius), 0, Math.PI * 2);
+            context.fill();
+
+            if (star.cross) {
+                context.strokeStyle = `hsla(${star.hue}, 95%, 92%, ${alpha * 0.8})`;
+                context.lineWidth = Math.max(0.35, radius * 0.22);
+                context.beginPath();
+                context.moveTo(x - radius * 2.6, y);
+                context.lineTo(x + radius * 2.6, y);
+                context.moveTo(x, y - radius * 2.6);
+                context.lineTo(x, y + radius * 2.6);
+                context.stroke();
+            }
+        }
+    }
+
+    private _alpha(hex: string, alpha: number): string {
+        const normalized = hex.replace('#', '');
+        const chunk = normalized.length === 3
+            ? normalized.split('').map(part => part + part).join('')
+            : normalized;
+        const red = parseInt(chunk.slice(0, 2), 16);
+        const green = parseInt(chunk.slice(2, 4), 16);
+        const blue = parseInt(chunk.slice(4, 6), 16);
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
     }
 
     private _handlePointerMove = (event: PointerEvent): void => {
@@ -203,16 +326,18 @@ export class StarBackground extends LitElement {
         const viewportHeight = window.innerHeight || 1;
         const normalizedX = (event.clientX / viewportWidth) - 0.5;
         const normalizedY = (event.clientY / viewportHeight) - 0.5;
-        this._offsetX = normalizedX * 20;
-        this._offsetY = normalizedY * 20;
+        this._offsetX = normalizedX * 18;
+        this._offsetY = normalizedY * 18;
+        this._scheduleRender();
     };
 
     private _handleDeviceOrientation = (event: DeviceOrientationEvent): void => {
         if (event.gamma == null || event.beta == null) {
             return;
         }
-        this._offsetX = Math.max(-14, Math.min(14, event.gamma * 0.8));
-        this._offsetY = Math.max(-14, Math.min(14, event.beta * 0.18));
+        this._offsetX = Math.max(-18, Math.min(18, event.gamma * 0.92));
+        this._offsetY = Math.max(-18, Math.min(18, event.beta * 0.22));
+        this._scheduleRender();
     };
 }
 

@@ -56,7 +56,7 @@ export class UserContext implements IUserContext {
         this.voicePreference = (localStorage.getItem(STORAGE_KEYS.voicePreference) as 'female' | 'male' | 'off' | null) ?? 'female';
         this.ttsProvider = (localStorage.getItem(STORAGE_KEYS.ttsProvider) as 'browser' | 'piper' | null) ?? this.detectDefaultTtsProvider();
         this.totalReadings = parseInt(localStorage.getItem(STORAGE_KEYS.totalReadings) ?? '0', 10);
-        this.location = this.getApproxLocation();
+        this.location = null;
 
         const traitsJson = localStorage.getItem(STORAGE_KEYS.userTraits);
         if (traitsJson) {
@@ -142,6 +142,13 @@ export class UserContext implements IUserContext {
     /** Country from CF IP geo */
     ipCountry: string | null = null;
 
+    applyGeoLocation(city: string | null, country: string | null, ip: string | null = null): void {
+        this.ipCity = city;
+        this.ipCountry = country;
+        this.ip = ip;
+        this.location = [city, country].filter(Boolean).join(', ') || null;
+    }
+
     /** Serialize for API requests. */
     toApiPayload() {
         return {
@@ -187,19 +194,37 @@ export class UserContext implements IUserContext {
         return uid;
     }
 
-    private getApproxLocation(): string | null {
-        try {
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            return tz ?? null;
-        } catch {
-            return null;
-        }
-    }
-
     private buildDeviceInfo(): DeviceInfo {
+        const userAgent = navigator.userAgent ?? '';
+        const platform = navigator.platform ?? '';
+        const maxTouchPoints = navigator.maxTouchPoints ?? 0;
+        const isIpad = /iPad/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1);
+        const isIphone = /iPhone/i.test(userAgent);
+        const isAndroid = /Android/i.test(userAgent);
+        const isMobile = /Mobile/i.test(userAgent) || isIphone || isAndroid;
+        const deviceType: DeviceInfo['deviceType'] = isIphone || (isAndroid && isMobile)
+            ? 'phone'
+            : isIpad || (isAndroid && !isMobile)
+                ? 'tablet'
+                : /Windows|Macintosh|Linux|X11/i.test(userAgent)
+                    ? 'desktop'
+                    : 'unknown';
+
+        const os = this.parseOs(userAgent, platform, isIpad);
+        const browser = this.parseBrowser(userAgent);
+        const model = this.parseDeviceModel(userAgent, deviceType, os.name);
+        const summaryParts = [model, os.label, browser.label].filter(Boolean);
+
         return {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
+            userAgent,
+            platform,
+            deviceType,
+            osName: os.name,
+            osVersion: os.version,
+            browserName: browser.name,
+            browserVersion: browser.version,
+            model,
+            summary: summaryParts.join(' · ') || platform || 'Unknown device',
             screenWidth: screen.width,
             screenHeight: screen.height,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -270,5 +295,80 @@ export class UserContext implements IUserContext {
         }
 
         return normalized;
+    }
+
+    private parseOs(userAgent: string, platform: string, isIpad: boolean): { name: string | null; version: string | null; label: string | null } {
+        const iosMatch = userAgent.match(/OS (\d+)[._](\d+)(?:[._](\d+))?/i);
+        if (/iPhone|iPad|iPod/i.test(userAgent) || isIpad) {
+            const version = iosMatch ? [iosMatch[1], iosMatch[2], iosMatch[3]].filter(Boolean).join('.') : null;
+            return { name: 'iOS', version, label: version ? `iOS ${version}` : 'iOS' };
+        }
+
+        const androidMatch = userAgent.match(/Android\s+([\d.]+)/i);
+        if (androidMatch) {
+            return { name: 'Android', version: androidMatch[1], label: `Android ${androidMatch[1]}` };
+        }
+
+        const windowsMatch = userAgent.match(/Windows NT\s+([\d.]+)/i);
+        if (windowsMatch) {
+            return { name: 'Windows', version: windowsMatch[1], label: `Windows ${windowsMatch[1]}` };
+        }
+
+        const macMatch = userAgent.match(/Mac OS X\s+([\d_]+)/i);
+        if (macMatch) {
+            const version = macMatch[1].replace(/_/g, '.');
+            return { name: 'macOS', version, label: `macOS ${version}` };
+        }
+
+        if (/Linux/i.test(platform) || /Linux/i.test(userAgent)) {
+            return { name: 'Linux', version: null, label: 'Linux' };
+        }
+
+        return { name: null, version: null, label: null };
+    }
+
+    private parseBrowser(userAgent: string): { name: string | null; version: string | null; label: string | null } {
+        const rules: Array<{ name: string; pattern: RegExp }> = [
+            { name: 'Edge', pattern: /Edg\/([\d.]+)/i },
+            { name: 'Chrome', pattern: /Chrome\/([\d.]+)/i },
+            { name: 'Firefox', pattern: /Firefox\/([\d.]+)/i },
+            { name: 'Safari', pattern: /Version\/([\d.]+).*Safari/i },
+            { name: 'Samsung Internet', pattern: /SamsungBrowser\/([\d.]+)/i },
+        ];
+
+        for (const rule of rules) {
+            const match = userAgent.match(rule.pattern);
+            if (match) {
+                return { name: rule.name, version: match[1], label: `${rule.name} ${match[1]}` };
+            }
+        }
+
+        return { name: null, version: null, label: null };
+    }
+
+    private parseDeviceModel(userAgent: string, deviceType: DeviceInfo['deviceType'], osName: string | null): string | null {
+        if (deviceType === 'desktop') {
+            if (/Macintosh/i.test(userAgent)) return 'Mac';
+            if (/Windows/i.test(userAgent)) return 'PC';
+            if (/Linux/i.test(userAgent)) return 'Linux PC';
+            return 'Desktop';
+        }
+
+        if (osName === 'iOS') {
+            if (/iPhone/i.test(userAgent)) return 'iPhone';
+            if (/iPad/i.test(userAgent)) return 'iPad';
+            return 'iOS device';
+        }
+
+        const androidModelMatch = userAgent.match(/Android[\s/][\d.]+;\s*([^;)]+?)(?:\sBuild|\))/i);
+        if (androidModelMatch) {
+            return androidModelMatch[1].trim();
+        }
+
+        if (osName === 'Android') {
+            return deviceType === 'tablet' ? 'Android tablet' : 'Android phone';
+        }
+
+        return null;
     }
 }

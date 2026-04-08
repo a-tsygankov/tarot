@@ -24,6 +24,13 @@ export interface IUserContext {
 export interface DeviceInfo {
     userAgent: string;
     platform: string;
+    deviceType: 'phone' | 'tablet' | 'desktop' | 'unknown';
+    osName: string | null;
+    osVersion: string | null;
+    browserName: string | null;
+    browserVersion: string | null;
+    model: string | null;
+    summary: string;
     screenWidth: number;
     screenHeight: number;
     timezone?: string;

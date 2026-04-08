@@ -120,6 +120,8 @@ export class ApiService implements IApiService {
             apiVersion: this.config.apiVersion,
             screenWidth: this.userContext.deviceInfo.screenWidth,
             screenHeight: this.userContext.deviceInfo.screenHeight,
+            device: this.userContext.deviceInfo.summary,
+            deviceInfo: this.userContext.deviceInfo,
         };
 
         try {

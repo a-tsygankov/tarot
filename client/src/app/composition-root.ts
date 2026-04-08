@@ -64,7 +64,12 @@ export function createAppServices(): AppServices {
     // Geo (passive, no permission needed)
     const geoService = new GeoService(CONFIG.apiBase);
     // Kick off async IP geo fetch (non-blocking)
-    geoService.fetchIpGeo().catch(() => {});
+    geoService.fetchIpGeo()
+        .then(geo => {
+            if (!geo) return;
+            userContext.applyGeoLocation(geo.city, geo.country, geo.ip);
+        })
+        .catch(() => {});
 
     return {
         config: CONFIG,

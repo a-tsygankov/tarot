@@ -1,6 +1,7 @@
 /**
  * API request/response contracts for all tarot-api Worker endpoints.
  */
+import type { DeviceInfo } from '../models/user-context.js';
 
 // ── Reading ──────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ export interface SessionRequest {
     screenWidth?: number;
     screenHeight?: number;
     device?: string;
+    deviceInfo?: DeviceInfo;
 }
 
 // ── Event ────────────────────────────────────────────────────────────
