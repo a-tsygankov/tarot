@@ -34,9 +34,9 @@ export class StarBackground extends LitElement {
     @state() private _offsetY = 0;
 
     private readonly _layers = {
-        far: buildLayer(28, 3, 'rgba(255,255,255,0.8)', [0.28, 0.62], 0.14),
-        mid: buildLayer(20, 9, 'rgba(201,168,76,0.95)', [0.4, 0.95], 0.18),
-        near: buildLayer(12, 17, 'rgba(255,244,214,0.95)', [0.6, 1.35], 0.24),
+        far: buildLayer(34, 3, '#ffffff', [0.9, 1.8], 0.18),
+        mid: buildLayer(24, 9, '#d8b35a', [1.1, 2.3], 0.24),
+        near: buildLayer(14, 17, '#fff1c3', [1.5, 3.2], 0.32),
     };
 
     static override styles = css`
@@ -51,26 +51,18 @@ export class StarBackground extends LitElement {
 
         .field {
             position: absolute;
-            inset: -8%;
-            width: 100%;
-            height: 100%;
-            will-change: transform;
-        }
-
-        svg {
-            width: 100%;
-            height: 100%;
+            inset: 0;
         }
 
         .nebula {
             position: absolute;
-            inset: -12%;
+            inset: -14%;
             background:
-                radial-gradient(circle at 20% 18%, rgba(201, 168, 76, 0.12), transparent 26%),
-                radial-gradient(circle at 78% 24%, rgba(117, 88, 171, 0.14), transparent 24%),
-                radial-gradient(circle at 50% 72%, rgba(201, 168, 76, 0.08), transparent 32%);
-            filter: blur(18px);
-            opacity: 0.9;
+                radial-gradient(circle at 20% 18%, rgba(201, 168, 76, 0.14), transparent 26%),
+                radial-gradient(circle at 78% 24%, rgba(117, 88, 171, 0.16), transparent 24%),
+                radial-gradient(circle at 50% 72%, rgba(201, 168, 76, 0.1), transparent 34%),
+                radial-gradient(circle at 52% 48%, rgba(255, 238, 201, 0.03), transparent 40%);
+            opacity: 0.95;
             transform: translate3d(calc(var(--parallax-x, 0px) * -0.4), calc(var(--parallax-y, 0px) * -0.25), 0);
         }
 
@@ -92,9 +84,37 @@ export class StarBackground extends LitElement {
             transform: translate3d(calc(var(--parallax-x, 0px) * 0.64), calc(var(--parallax-y, 0px) * 0.46), 0);
         }
 
+        .star {
+            position: absolute;
+            border-radius: 999px;
+            transform-origin: center;
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        .star.cross::before,
+        .star.cross::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            background: currentColor;
+            border-radius: 999px;
+            transform: translate(-50%, -50%);
+            opacity: 0.78;
+        }
+
+        .star.cross::before {
+            width: 220%;
+            height: 0.8px;
+        }
+
+        .star.cross::after {
+            width: 0.8px;
+            height: 220%;
+        }
+
         .twinkle {
             animation: twinkle 5.6s ease-in-out infinite;
-            transform-origin: center;
         }
 
         .twinkle.alt {
@@ -140,51 +160,41 @@ export class StarBackground extends LitElement {
             <div class="field" style=${`--parallax-x:${this._offsetX}px; --parallax-y:${this._offsetY}px;`}>
                 <div class="nebula"></div>
                 <div class="layer far">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                        ${this._layers.far.map((star, index) => html`
-                            <circle
-                                class="twinkle ${index % 3 === 0 ? 'alt' : ''}"
-                                cx=${star.x}
-                                cy=${star.y}
-                                r=${star.r}
-                                fill=${star.fill}
-                                opacity=${star.opacity}
-                            ></circle>
-                        `)}
-                    </svg>
+                    ${this._layers.far.map((star, index) => this._renderStar(star, index))}
                 </div>
                 <div class="layer mid">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                        ${this._layers.mid.map((star, index) => html`
-                            <circle
-                                class="twinkle ${index % 2 === 0 ? 'slow' : ''}"
-                                cx=${star.x}
-                                cy=${star.y}
-                                r=${star.r}
-                                fill=${star.fill}
-                                opacity=${star.opacity}
-                            ></circle>
-                        `)}
-                    </svg>
+                    ${this._layers.mid.map((star, index) => this._renderStar(star, index, index % 5 === 0))}
                 </div>
                 <div class="layer near">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                        ${this._layers.near.map((star, index) => html`
-                            <g class="twinkle ${index % 2 === 0 ? 'alt' : ''}" opacity=${star.opacity}>
-                                <circle cx=${star.x} cy=${star.y} r=${star.r} fill=${star.fill}></circle>
-                                ${index % 4 === 0 ? html`
-                                    <path
-                                        d=${`M ${star.x - (star.r * 2.3)} ${star.y} L ${star.x + (star.r * 2.3)} ${star.y} M ${star.x} ${star.y - (star.r * 2.3)} L ${star.x} ${star.y + (star.r * 2.3)}`}
-                                        stroke=${star.fill}
-                                        stroke-width=${star.r * 0.18}
-                                        stroke-linecap="round"
-                                    ></path>
-                                ` : ''}
-                            </g>
-                        `)}
-                    </svg>
+                    ${this._layers.near.map((star, index) => this._renderStar(star, index, true))}
                 </div>
             </div>
+        `;
+    }
+
+    private _renderStar(star: StarLayerPoint, index: number, cross = false) {
+        const classes = [
+            'star',
+            'twinkle',
+            index % 2 === 0 ? 'alt' : '',
+            index % 3 === 0 ? 'slow' : '',
+            cross ? 'cross' : '',
+        ].filter(Boolean).join(' ');
+
+        return html`
+            <span
+                class=${classes}
+                style=${[
+                    `left:${star.x}%`,
+                    `top:${star.y}%`,
+                    `width:${star.r}px`,
+                    `height:${star.r}px`,
+                    `background:${star.fill}`,
+                    `color:${star.fill}`,
+                    `opacity:${star.opacity}`,
+                ].join(';')}
+                aria-hidden="true"
+            ></span>
         `;
     }
 
