@@ -3,8 +3,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 
-type Tab = 'games' | 'users' | 'sessions' | 'locations';
-type DetailKind = 'overview' | 'user' | 'game' | 'session' | 'location';
+type Tab = 'readings' | 'users' | 'sessions' | 'locations';
+type DetailKind = 'overview' | 'user' | 'reading' | 'session' | 'location';
 type JsonMap = Record<string, any>;
 
 @customElement('dashboard-panel')
@@ -47,7 +47,7 @@ export class DashboardPanelLite extends LitElement {
     @state() private data: JsonMap | null = null;
     @state() private detail: JsonMap | null = null;
     @state() private detailKind: DetailKind = 'overview';
-    @state() private tab: Tab = 'games';
+    @state() private tab: Tab = 'readings';
     @state() private loading = false;
     @state() private detailLoading = false;
     @state() private validating = false;
@@ -117,6 +117,7 @@ export class DashboardPanelLite extends LitElement {
         if (!d) return this.loading ? html`<div class="center" style="padding:3em 0;"><div class="spinner spinner-lg"></div></div>` : nothing;
         const totals = this.getObj(d, 'totals');
         const perf = this.getObj(d, 'performance');
+        const scopeDays = Number(d.scopeDays ?? this.days);
         return html`
             <div class="controls">
                 <div class="row">
@@ -135,6 +136,7 @@ export class DashboardPanelLite extends LitElement {
                 ${this.stat(d.activeUsersToday, 'Active Today')}
                 ${this.stat(perf ? `${(Number(perf.avgResponseMs ?? 0) / 1000).toFixed(1)}s` : '-', 'Avg Reading')}
             </div>
+            <div class="subtle" style="margin:-.45em 0 1em;">Green +N shows additions in the current ${scopeDays}d scope. Active Today ignores scope.</div>
             <div class="panel">
                 <div class="section">Top Languages</div>
                 <div class="pills">
@@ -142,7 +144,7 @@ export class DashboardPanelLite extends LitElement {
                 </div>
             </div>
             <div class="tabs">
-                ${this.tabBtn('games', 'Readings')}
+                ${this.tabBtn('readings', 'Readings')}
                 ${this.tabBtn('users', 'Users')}
                 ${this.tabBtn('sessions', 'Sessions')}
                 ${this.tabBtn('locations', 'Locations')}
@@ -185,11 +187,11 @@ export class DashboardPanelLite extends LitElement {
                 </tr>`)}
             </tbody></table></div></div>`;
         }
-        const games = this.getArr(d, 'recentGames');
+        const readings = this.getArr(d, 'recentGames');
         return html`<div class="panel"><div class="section">Recent Readings</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>User</th><th>Session</th><th>Location</th><th>Question</th></tr></thead><tbody>
-            ${games.map((g: any) => html`<tr>
+            ${readings.map((g: any) => html`<tr>
                 <td>${this.time(g.createdAt)}</td>
-                <td><button class="linkish" @click=${() => this.openDetail('game', g.gameId)}>${g.spreadType}-card</button></td>
+                <td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.spreadType}-card</button></td>
                 <td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.short(g.uid)}</button></td>
                 <td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td>
                 <td>${g.city || g.country ? html`<button class="linkish" @click=${() => this.openDetail('location', this.locationKey(g.city, g.country))}>${[g.city, g.country].filter(Boolean).join(', ')}</button>` : '-'}</td>
@@ -212,20 +214,20 @@ export class DashboardPanelLite extends LitElement {
                     <span class="k">Last location</span><span class="v">${[user.locations?.lastCity, user.locations?.lastCountry].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Latest device</span><span class="v">${user.latestDevice ?? 'Unknown'}</span>
                 </div>${this.traitEntries(user.userTraits).length ? html`<div class="section" style="margin-top:.9em;">Traits</div><div class="pills">${this.traitEntries(user.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div>` : nothing}</div>
-                <div class="panel"><div class="section">Sessions</div><div class="stack">${this.getArr(d, 'sessions').map((s: any) => html`<details><summary>${this.time(s.createdAt)} · ${[s.city, s.country].filter(Boolean).join(', ') || 'Unknown'} · ${s.gameCount} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>Open session</button>${s.lastGameId ? html`<button class="linkish" @click=${() => this.openDetail('game', s.lastGameId)}>Latest reading</button>` : nothing}</div></details>`)}</div></div>
-                <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>Session</th><th>Location</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('game', g.gameId)}>${g.spreadType}-card</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
+                <div class="panel"><div class="section">Sessions</div><div class="stack">${this.getArr(d, 'sessions').map((s: any) => html`<details><summary>${this.time(s.createdAt)} · ${[s.city, s.country].filter(Boolean).join(', ') || 'Unknown'} · ${s.gameCount} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>Open session</button>${s.lastGameId ? html`<button class="linkish" @click=${() => this.openDetail('reading', s.lastGameId)}>Latest reading</button>` : nothing}</div></details>`)}</div></div>
+                <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>Session</th><th>Location</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.spreadType}-card</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
         }
-        if (this.detailKind === 'game') {
+        if (this.detailKind === 'reading') {
             const game = this.getObj(d, 'game')!;
             return html`${this.crumb('Reading', this.short(String(game.gameId ?? '')))}
                 <div class="panel"><div class="section">Reading Detail</div><div class="grid">
-                    <span class="k">Game</span><span class="v">${game.gameId}</span>
+                    <span class="k">Reading ID</span><span class="v">${game.gameId}</span>
                     <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(game.uid))}>${this.short(String(game.uid))}</button></span>
                     <span class="k">Session</span><span class="v"><button class="linkish" @click=${() => this.openDetail('session', String(game.sessionId))}>${this.short(String(game.sessionId))}</button></span>
                     <span class="k">Location</span><span class="v">${[game.location?.city, game.location?.country].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Question</span><span class="v">${game.question ?? '-'}</span>
                 </div>${game.originalRequest ? html`<div class="section" style="margin-top:.9em;">Original Request</div><pre>${JSON.stringify(game.originalRequest, null, 2)}</pre>` : nothing}</div>
-                <div class="panel"><div class="section">Turns</div><div class="stack">${this.getArr(d, 'turns').map((t: any) => html`<div><div class="subtle">${t.turnType} · ${t.aiProvider}/${t.aiModel} · ${(Number(t.responseTimeMs ?? 0) / 1000).toFixed(1)}s · ${this.time(t.createdAt)}</div>${t.question ? html`<div class="subtle">${t.question}</div>` : nothing}<pre>${t.answerText}</pre>${t.userContextDelta ? html`<div class="subtle">Extracted: ${JSON.stringify(t.userContextDelta)}</div>` : nothing}</div>`)}</div></div>`;
+                <div class="panel"><div class="section">Reading And Follow-up Turns</div><div class="stack">${this.getArr(d, 'turns').map((t: any) => html`<div><div class="subtle">${t.turnType} · ${t.aiProvider}/${t.aiModel} · ${(Number(t.responseTimeMs ?? 0) / 1000).toFixed(1)}s · ${this.time(t.createdAt)}</div>${t.question ? html`<div class="subtle">${t.question}</div>` : nothing}<pre>${t.answerText}</pre>${t.userContextDelta ? html`<div class="subtle">Extracted: ${JSON.stringify(t.userContextDelta)}</div>` : nothing}</div>`)}</div></div>`;
         }
         if (this.detailKind === 'session') {
             const session = this.getObj(d, 'session')!;
@@ -235,16 +237,20 @@ export class DashboardPanelLite extends LitElement {
                     <span class="k">Location</span><span class="v">${[session.city, session.country].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Timezone</span><span class="v">${session.timezone ?? '-'}</span>
                     <span class="k">Device</span><span class="v">${session.device ?? '-'} · v${session.appVersion}</span>
+                    <span class="k">Device type</span><span class="v">${session.deviceInfo?.deviceType ?? '-'}</span>
+                    <span class="k">Model</span><span class="v">${session.deviceInfo?.model ?? '-'}</span>
+                    <span class="k">OS</span><span class="v">${[session.deviceInfo?.osName, session.deviceInfo?.osVersion].filter(Boolean).join(' ') || '-'}</span>
+                    <span class="k">Browser</span><span class="v">${[session.deviceInfo?.browserName, session.deviceInfo?.browserVersion].filter(Boolean).join(' ') || '-'}</span>
                     <span class="k">Screen</span><span class="v">${session.screenWidth ?? '-'} × ${session.screenHeight ?? '-'}</span>
                 </div></div>
-                <div class="panel"><div class="section">Readings In Session</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>Question</th><th>Location</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('game', g.gameId)}>${g.gameId}</button></td><td>${g.question ?? '-'}</td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td></tr>`)}</tbody></table></div></div>
+                <div class="panel"><div class="section">Readings In Session</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>Question</th><th>Location</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td>${g.question ?? '-'}</td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td></tr>`)}</tbody></table></div></div>
                 <div class="panel"><div class="section">All Questions And Answers</div><div class="stack">${this.getArr(d, 'turns').map((t: any) => html`<div><div class="subtle">${t.gameId} · ${t.turnType} · ${this.time(t.createdAt)}</div>${t.question ? html`<div class="subtle">${t.question}</div>` : nothing}<pre>${t.answerText}</pre></div>`)}</div></div>`;
         }
         const location = this.getObj(d, 'location')!;
         return html`${this.crumb('Location', [location.city, location.country].filter(Boolean).join(', '))}
             <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${u.name ?? this.short(u.uid)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${this.traitEntries(u.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div></details>`)}</div></div>
             <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Readings</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.short(s.uid)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
-            <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('game', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.short(g.uid)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
+            <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.short(g.uid)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
     }
 
     private stat(value: unknown, scopeOrLabel: unknown, maybeLabel?: string) {
@@ -292,7 +298,8 @@ export class DashboardPanelLite extends LitElement {
     private async openDetail(kind: Exclude<DetailKind, 'overview'>, id: string): Promise<void> {
         this.detailLoading = true; this.error = '';
         try {
-            this.detail = await this.fetchJson(`/api/admin/${kind}/${id}`);
+            const apiKind = kind === 'reading' ? 'game' : kind;
+            this.detail = await this.fetchJson(`/api/admin/${apiKind}/${id}`);
             this.detailKind = kind;
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);
