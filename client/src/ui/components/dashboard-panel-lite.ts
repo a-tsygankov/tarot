@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 
-type Tab = 'readings' | 'users' | 'sessions' | 'locations';
+type Tab = 'users' | 'sessions' | 'locations';
 type DetailKind = 'overview' | 'user' | 'reading' | 'session' | 'location';
 type JsonMap = Record<string, any>;
 
@@ -47,7 +47,7 @@ export class DashboardPanelLite extends LitElement {
     @state() private data: JsonMap | null = null;
     @state() private detail: JsonMap | null = null;
     @state() private detailKind: DetailKind = 'overview';
-    @state() private tab: Tab = 'readings';
+    @state() private tab: Tab = 'users';
     @state() private loading = false;
     @state() private detailLoading = false;
     @state() private validating = false;
@@ -144,7 +144,6 @@ export class DashboardPanelLite extends LitElement {
                 </div>
             </div>
             <div class="tabs">
-                ${this.tabBtn('readings', 'Readings')}
                 ${this.tabBtn('users', 'Users')}
                 ${this.tabBtn('sessions', 'Sessions')}
                 ${this.tabBtn('locations', 'Locations')}
