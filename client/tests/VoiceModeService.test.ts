@@ -58,6 +58,7 @@ describe('VoiceModeService', () => {
                 questionDigest: 'question digest',
                 answerDigest: 'answer digest',
                 userContextDelta: null,
+                userTraits: null,
             }),
             fetchTtsAsync: vi.fn(),
             logSessionAsync: vi.fn(),

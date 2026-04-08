@@ -296,6 +296,7 @@ export class FollowupChat extends LitElement {
             if (response.userContextDelta) {
                 this.services.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this.services.userContext.applyUserTraits(response.userTraits);
 
             this._messages = [...this._messages, {
                 role: 'oracle',

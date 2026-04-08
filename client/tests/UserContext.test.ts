@@ -42,7 +42,7 @@ describe('UserContext', () => {
         expect(ctx.theme).toBe('dusk');
         expect(ctx.voicePreference).toBe('female');
         expect(ctx.ttsProvider).toBe('piper');
-        expect(ctx.traits).toEqual({});
+        expect(ctx.userTraits).toBeNull();
         expect(ctx.totalReadings).toBe(0);
     });
 
@@ -60,7 +60,13 @@ describe('UserContext', () => {
         ctx.tone = 'Ironic';
         ctx.voicePreference = 'off';
         ctx.ttsProvider = 'browser';
-        ctx.traits = { zodiac_sign: 'Scorpio' };
+        ctx.userTraits = {
+            id: 'traits-test-uuid-1234',
+            userId: 'test-uuid-1234',
+            traits: { zodiac_sign: ['Scorpio'] },
+            createdAt: '2026-04-08T00:00:00.000Z',
+            updatedAt: '2026-04-08T00:00:00.000Z',
+        };
         ctx.totalReadings = 5;
         ctx.save();
 
@@ -72,7 +78,7 @@ describe('UserContext', () => {
         expect(ctx2.tone).toBe('Ironic');
         expect(ctx2.voicePreference).toBe('off');
         expect(ctx2.ttsProvider).toBe('browser');
-        expect(ctx2.traits).toEqual({ zodiac_sign: 'Scorpio' });
+        expect(ctx2.userTraits?.traits).toEqual({ zodiac_sign: ['Scorpio'] });
         expect(ctx2.totalReadings).toBe(5);
     });
 
@@ -113,23 +119,6 @@ describe('UserContext', () => {
             expect(ctx.name).toBe('Anna');
         });
 
-        it('merges traits into existing traits', () => {
-            const ctx = new UserContext();
-            ctx.traits = { zodiac_sign: 'Scorpio' };
-            ctx.applyAiUpdate({
-                name: null,
-                gender: null,
-                birthdate: null,
-                location: null,
-                traits: { relationship_status: 'complicated', occupation: 'engineer' },
-            });
-            expect(ctx.traits).toEqual({
-                zodiac_sign: 'Scorpio',
-                relationship_status: 'complicated',
-                occupation: 'engineer',
-            });
-        });
-
         it('does nothing for null delta', () => {
             const ctx = new UserContext();
             ctx.name = 'Anna';
@@ -156,13 +145,19 @@ describe('UserContext', () => {
             ctx.name = 'Anna';
             ctx.language = 'RUS';
             ctx.tone = 'Ironic';
-            ctx.traits = { zodiac_sign: 'Scorpio' };
+            ctx.applyUserTraits({
+                id: 'traits-test-uuid-1234',
+                userId: 'test-uuid-1234',
+                traits: { zodiac_sign: ['Scorpio'] },
+                createdAt: '2026-04-08T00:00:00.000Z',
+                updatedAt: '2026-04-08T00:00:00.000Z',
+            });
 
             const payload = ctx.toApiPayload();
             expect(payload.uid).toBe(ctx.uid);
             expect(payload.name).toBe('Anna');
             expect(payload.language).toBe('RUS');
-            expect(payload.traits).toEqual({ zodiac_sign: 'Scorpio' });
+            expect(payload.userTraits?.traits).toEqual({ zodiac_sign: ['Scorpio'] });
         });
     });
 
@@ -176,12 +171,45 @@ describe('UserContext', () => {
             const ctx = new UserContext();
             ctx.name = 'Anna';
             ctx.gender = 'female';
-            ctx.traits = { zodiac_sign: 'Scorpio' };
+            ctx.applyUserTraits({
+                id: 'traits-test-uuid-1234',
+                userId: 'test-uuid-1234',
+                traits: { zodiac_sign: ['Scorpio'] },
+                createdAt: '2026-04-08T00:00:00.000Z',
+                updatedAt: '2026-04-08T00:00:00.000Z',
+            });
             const summary = ctx.toPromptSummary();
             expect(summary).toContain('Name: Anna');
             expect(summary).toContain('Gender: female');
             expect(summary).toContain('zodiac sign: Scorpio');
             expect(summary).toContain(' | ');
+        });
+    });
+
+    describe('applyUserTraits', () => {
+        it('replaces local traits snapshot with the server version', () => {
+            const ctx = new UserContext();
+            ctx.applyUserTraits({
+                id: 'traits-test-uuid-1234',
+                userId: 'test-uuid-1234',
+                traits: { likes: ['tarot', 'cats'], dislikes: ['noise'] },
+                createdAt: '2026-04-08T00:00:00.000Z',
+                updatedAt: '2026-04-08T00:00:00.000Z',
+            });
+
+            expect(ctx.userTraits?.traits).toEqual({
+                likes: ['tarot', 'cats'],
+                dislikes: ['noise'],
+            });
+        });
+
+        it('upgrades legacy stored single-value traits into arrays', () => {
+            storage.tarot_user_traits = JSON.stringify({ zodiac_sign: 'Scorpio' });
+
+            const ctx = new UserContext();
+            ctx.restore();
+
+            expect(ctx.userTraits?.traits).toEqual({ zodiac_sign: ['Scorpio'] });
         });
     });
 });

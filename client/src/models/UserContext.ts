@@ -1,5 +1,5 @@
 import type { IUserContext, DeviceInfo } from '@shared/models/user-context.js';
-import type { UserContextDelta } from '@shared/contracts/api-contracts.js';
+import type { TraitValueMap, UserContextDelta, UserTraitsPayload } from '@shared/contracts/api-contracts.js';
 
 const STORAGE_KEYS = {
     uid: 'tarot_uid',
@@ -29,7 +29,7 @@ export class UserContext implements IUserContext {
     gender: string | null = null;
     birthdate: string | null = null;
     location: string | null = null;
-    traits: Record<string, string> = {};
+    userTraits: UserTraitsPayload | null = null;
     language = 'ENG';
     tone = 'Mystical';
     theme = 'dusk';
@@ -61,9 +61,10 @@ export class UserContext implements IUserContext {
         const traitsJson = localStorage.getItem(STORAGE_KEYS.userTraits);
         if (traitsJson) {
             try {
-                this.traits = JSON.parse(traitsJson);
+                const parsed = JSON.parse(traitsJson) as UserTraitsPayload | TraitValueMap;
+                this.userTraits = this.normalizeStoredTraits(parsed);
             } catch {
-                this.traits = {};
+                this.userTraits = null;
             }
         }
     }
@@ -80,13 +81,16 @@ export class UserContext implements IUserContext {
         localStorage.setItem(STORAGE_KEYS.voicePreference, this.voicePreference);
         localStorage.setItem(STORAGE_KEYS.ttsProvider, this.ttsProvider);
         localStorage.setItem(STORAGE_KEYS.totalReadings, String(this.totalReadings));
-        localStorage.setItem(STORAGE_KEYS.userTraits, JSON.stringify(this.traits));
+        if (this.userTraits) {
+            localStorage.setItem(STORAGE_KEYS.userTraits, JSON.stringify(this.userTraits));
+        } else {
+            localStorage.removeItem(STORAGE_KEYS.userTraits);
+        }
     }
 
     /**
-     * Merge AI-returned user context delta.
-     * Known fields go to top-level. Everything else merges into traits.
-     * Null values are ignored (never delete existing data).
+     * Merge AI-returned top-level user context delta.
+     * Traits are server-owned and replaced separately via applyUserTraits().
      */
     applyAiUpdate(delta: UserContextDelta | null): void {
         if (!delta) return;
@@ -110,27 +114,22 @@ export class UserContext implements IUserContext {
             changes.push(`location: ${delta.location}`);
         }
 
-        if (delta.traits && typeof delta.traits === 'object') {
-            for (const [key, value] of Object.entries(delta.traits)) {
-                if (value != null) {
-                    const isNew = !(key in this.traits);
-                    const isChanged = this.traits[key] !== value;
-                    if (isNew || isChanged) {
-                        changes.push(`${key.replace(/_/g, ' ')}: ${value}${isNew ? ' (new)' : ' (updated)'}`);
-                    }
-                    this.traits[key] = value;
-                }
-            }
-        }
-
         if (changes.length > 0) {
             console.log(
-                '%cAI extracted user traits:',
+                '%cAI updated user context:',
                 'color: #c9a84c; font-weight: bold;',
                 changes.join(' | '),
             );
         }
 
+        this.save();
+    }
+
+    applyUserTraits(userTraits: UserTraitsPayload | null): void {
+        this.userTraits = userTraits ? {
+            ...userTraits,
+            traits: this.normalizeTraitMap(userTraits.traits),
+        } : null;
         this.save();
     }
 
@@ -152,7 +151,7 @@ export class UserContext implements IUserContext {
             gender: this.gender,
             birthdate: this.birthdate,
             location: this.location,
-            traits: this.traits,
+            userTraits: this.userTraits,
             language: this.language,
             tone: this.tone,
             ip: this.ip,
@@ -169,8 +168,9 @@ export class UserContext implements IUserContext {
         if (this.birthdate) parts.push('Born: ' + this.birthdate);
         if (this.location) parts.push('Location: ' + this.location);
 
-        for (const [key, value] of Object.entries(this.traits)) {
-            parts.push(key.replace(/_/g, ' ') + ': ' + value);
+        for (const [key, values] of Object.entries(this.userTraits?.traits ?? {})) {
+            if (!values.length) continue;
+            parts.push(key.replace(/_/g, ' ') + ': ' + values.join(', '));
         }
 
         return parts.length > 0 ? parts.join(' | ') : 'No personal details known.';
@@ -221,5 +221,54 @@ export class UserContext implements IUserContext {
         }
 
         localStorage.removeItem(key);
+    }
+
+    private normalizeStoredTraits(
+        value: UserTraitsPayload | TraitValueMap | null,
+    ): UserTraitsPayload | null {
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+
+        if ('traits' in value && 'id' in value && 'userId' in value) {
+            const payload = value as UserTraitsPayload;
+            return {
+                ...payload,
+                traits: this.normalizeTraitMap(payload.traits),
+            };
+        }
+
+        const legacyTraits = this.normalizeTraitMap(value as TraitValueMap);
+        if (Object.keys(legacyTraits).length === 0) {
+            return null;
+        }
+
+        const now = new Date().toISOString();
+        return {
+            id: `traits-${this.uid}`,
+            userId: this.uid,
+            traits: legacyTraits,
+            createdAt: now,
+            updatedAt: now,
+        };
+    }
+
+    private normalizeTraitMap(traits: TraitValueMap | null | undefined): TraitValueMap {
+        if (!traits || typeof traits !== 'object') {
+            return {};
+        }
+
+        const normalized: TraitValueMap = {};
+        for (const [key, rawValues] of Object.entries(traits)) {
+            const values = Array.isArray(rawValues) ? rawValues : [String(rawValues)];
+            const cleaned = values
+                .map(value => String(value).trim())
+                .filter(Boolean);
+            if (cleaned.length > 0) {
+                normalized[key] = Array.from(new Set(cleaned));
+            }
+        }
+
+        return normalized;
     }
 }

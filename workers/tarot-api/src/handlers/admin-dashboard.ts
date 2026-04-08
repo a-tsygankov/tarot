@@ -1,5 +1,5 @@
 import type { Env } from '../env.js';
-import type { DailySummary, GameDocument, SessionDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
+import type { DailySummary, GameDocument, SessionDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
 import { buildLocationKey, listDocuments, requireAdmin } from './admin-helpers.js';
 
 /**
@@ -42,7 +42,7 @@ export interface DashboardResponse {
         lastSeenAt: string;
         lastCity: string | null;
         lastCountry: string | null;
-        traits: Record<string, string>;
+        userTraits: Record<string, string[]>;
         sessionIds: string[];
         locationKeys: string[];
         recentGameIds: string[];
@@ -127,10 +127,11 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         })();
 
-        const [allUsers, allSessions, allGames] = await Promise.all([
+        const [allUsers, allSessions, allGames, allUserTraits] = await Promise.all([
             listDocuments<UserDocument>(env.R2, 'entities/users/'),
             listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
             listDocuments<GameDocument>(env.R2, 'entities/games/'),
+            listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
         ]);
 
         // Fetch recent games (last 20)
@@ -249,6 +250,11 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             gamesByUid.set(game.uid, current);
         }
 
+        const traitsByUserId = new Map<string, UserTraitsDocument>();
+        for (const traits of allUserTraits) {
+            traitsByUserId.set(traits.userId, traits);
+        }
+
         const users = allUsers
             .map(user => {
                 const userSessions = (sessionsByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -270,7 +276,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                     lastSeenAt: user.lastSeenAt,
                     lastCity: user.locations.lastCity,
                     lastCountry: user.locations.lastCountry,
-                    traits: user.traits,
+                    userTraits: traitsByUserId.get(user.uid)?.traits ?? {},
                     sessionIds: userSessions.map(session => session.sessionId),
                     locationKeys,
                     recentGameIds: userGames.slice(0, 5).map(game => game.gameId),

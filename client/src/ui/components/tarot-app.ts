@@ -39,7 +39,7 @@ export class TarotApp extends LitElement {
 
             .screen {
                 flex: 1;
-                padding: 0 1em 4.5em; /* extra bottom padding for bottom bar */
+                padding: 0 1em calc(8rem + env(safe-area-inset-bottom, 0px));
                 animation: fadeIn 0.3s ease-out;
                 position: relative;
                 z-index: 1;
@@ -640,6 +640,7 @@ export class TarotApp extends LitElement {
             if (response.userContextDelta) {
                 this._services.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this._services.userContext.applyUserTraits(response.userTraits);
             this._readingVersion += 1;
         } catch (err) {
             console.error('Re-request reading failed:', err instanceof Error ? err.message : err);

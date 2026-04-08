@@ -157,7 +157,7 @@ export class DashboardPanelLite extends LitElement {
                 ${users.map((u: any) => html`<tr>
                     <td><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>${u.name ?? this.short(u.uid)}</button><div class="subtle">${this.short(u.uid)} · ${u.language}/${u.tone}</div></td>
                     <td><div>${[u.gender, u.birthdate].filter(Boolean).join(' · ') || 'No profile fields'}</div><div class="subtle">Readings ${u.totalReadings} · Follow-ups ${u.totalFollowUps}</div><div class="subtle">${[u.lastCity, u.lastCountry].filter(Boolean).join(', ') || 'Unknown'} · ${this.time(u.lastSeenAt)}</div></td>
-                    <td>${this.detailList('Traits', Object.entries(u.traits ?? {}).map(([k, v]) => `${k}: ${v}`))}</td>
+                    <td>${this.detailList('Traits', this.traitEntries(u.userTraits))}</td>
                     <td>${this.detailActionList('Sessions', u.sessionIds ?? [], (id: string) => this.openDetail('session', id))}</td>
                     <td>${this.detailActionList('Locations', (u.locationKeys ?? []).map((v: string) => this.prettyLocation(v)), (key: string) => this.openDetail('location', this.locationKeyFromPretty(key)))}</td>
                 </tr>`)}
@@ -209,7 +209,7 @@ export class DashboardPanelLite extends LitElement {
                     <span class="k">Readings</span><span class="v">${user.stats?.totalReadings}</span>
                     <span class="k">Follow-ups</span><span class="v">${user.stats?.totalFollowUps}</span>
                     <span class="k">Last location</span><span class="v">${[user.locations?.lastCity, user.locations?.lastCountry].filter(Boolean).join(', ') || 'Unknown'}</span>
-                </div>${Object.keys(user.traits ?? {}).length ? html`<div class="section" style="margin-top:.9em;">Traits</div><div class="pills">${Object.entries(user.traits).map(([k, v]) => html`<span class="pill">${k}: ${v}</span>`)}</div>` : nothing}</div>
+                </div>${this.traitEntries(user.userTraits).length ? html`<div class="section" style="margin-top:.9em;">Traits</div><div class="pills">${this.traitEntries(user.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div>` : nothing}</div>
                 <div class="panel"><div class="section">Sessions</div><div class="stack">${this.getArr(d, 'sessions').map((s: any) => html`<details><summary>${this.time(s.createdAt)} · ${[s.city, s.country].filter(Boolean).join(', ') || 'Unknown'} · ${s.gameCount} games</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>Open session</button>${s.lastGameId ? html`<button class="linkish" @click=${() => this.openDetail('game', s.lastGameId)}>Latest game</button>` : nothing}</div></details>`)}</div></div>
                 <div class="panel"><div class="section">Games</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Game</th><th>Session</th><th>Location</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('game', g.gameId)}>${g.spreadType}-card</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
         }
@@ -240,7 +240,7 @@ export class DashboardPanelLite extends LitElement {
         }
         const location = this.getObj(d, 'location')!;
         return html`${this.crumb('Location', [location.city, location.country].filter(Boolean).join(', '))}
-            <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${u.name ?? this.short(u.uid)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${Object.entries(u.traits ?? {}).map(([k, v]) => html`<span class="pill">${k}: ${v}</span>`)}</div></details>`)}</div></div>
+            <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${u.name ?? this.short(u.uid)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${this.traitEntries(u.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div></details>`)}</div></div>
             <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Games</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.short(s.uid)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
             <div class="panel"><div class="section">Games</div><div class="table-wrap"><table><thead><tr><th>Game</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('game', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.short(g.uid)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
     }
@@ -313,6 +313,11 @@ export class DashboardPanelLite extends LitElement {
     private locationKeyFromPretty(label: string): string { const [city, country] = label.split(',').map(v => v.trim()); return this.locationKey(city || null, country || null); }
     private getObj(source: JsonMap, key: string): JsonMap | undefined { const value = source[key]; return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonMap : undefined; }
     private getArr(source: JsonMap, key: string): unknown[] { return Array.isArray(source[key]) ? source[key] as unknown[] : []; }
+    private traitEntries(source: Record<string, string[]> | undefined): string[] {
+        return Object.entries(source ?? {}).flatMap(([key, values]) =>
+            (values ?? []).map(value => `${key}: ${value}`),
+        );
+    }
 }
 
 declare global {

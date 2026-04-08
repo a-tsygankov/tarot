@@ -535,6 +535,7 @@ export class CardSpread extends LitElement {
             if (response.userContextDelta) {
                 this.services.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this.services.userContext.applyUserTraits(response.userTraits);
 
             this.dispatchEvent(new CustomEvent('reading-ready'));
         } catch (err) {

@@ -50,7 +50,7 @@ interface UserDetailData {
         name: string | null;
         gender: string | null;
         birthdate: string | null;
-        traits: Record<string, string>;
+        userTraits: Record<string, string[]>;
         stats: { totalReadings: number; totalFollowUps: number };
         preferences: { language: string; tone: string };
         locations: { lastCountry: string | null; lastCity: string | null };
@@ -1164,15 +1164,15 @@ export class DashboardPanel extends LitElement {
                 </div>
 
                 <!-- Traits -->
-                ${Object.keys(u.traits).length > 0 ? html`
+                ${Object.keys(u.userTraits).length > 0 ? html`
                     <div class="detail-section">
                         <div class="section-title">Traits</div>
                         <div class="trait-grid">
-                            ${Object.entries(u.traits).map(([k, v]) => html`
+                            ${Object.entries(u.userTraits).flatMap(([k, values]) => values.map(v => html`
                                 <div class="trait-pill">
                                     <span class="trait-key">${k.replace(/_/g, ' ')}:</span>${v}
                                 </div>
-                            `)}
+                            `))}
                         </div>
                     </div>
                 ` : nothing}
