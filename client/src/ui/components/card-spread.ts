@@ -392,7 +392,14 @@ export class CardSpread extends LitElement {
                             ${(['Love', 'Career', 'Health', 'Spirit', 'Finance', 'Change'] as const).map(t => html`
                                 <button
                                     class="topic-chip ${this._selectedTopic === t ? 'selected' : ''}"
-                                    @click=${() => { this._selectedTopic = this._selectedTopic === t ? '' : t; }}
+                                    @click=${() => {
+                                        if (this._sttListening) {
+                                            this.services.sttService.stop();
+                                            this._sttListening = false;
+                                            this._sttStatus = '';
+                                        }
+                                        this._selectedTopic = this._selectedTopic === t ? '' : t;
+                                    }}
                                 >${t}</button>
                             `)}
                         </div>
@@ -511,6 +518,12 @@ export class CardSpread extends LitElement {
     private async _fetchReading(): Promise<void> {
         if (!this.services || this._loading) return;
 
+        if (this._sttListening) {
+            this.services.sttService.stop();
+            this._sttListening = false;
+            this._sttStatus = '';
+        }
+
         this._loading = true;
         this.dispatchEvent(new CustomEvent('loading', { detail: true }));
 
@@ -593,20 +606,23 @@ export class CardSpread extends LitElement {
             onResult: (transcript) => {
                 const clean = transcript.trim();
                 this._question = this._mergeTranscript(clean);
+                this._sttListening = false;
                 this._sttStatus = clean ? 'Question captured.' : '';
+                this.services.sttService.stop();
                 this.updateComplete.then(() => {
                     this._questionInput?.focus();
                 });
             },
             onEnd: () => {
                 this._sttListening = false;
-                if (this._sttStatus === 'Listening...') {
+                if (this._sttStatus.startsWith('Listening')) {
                     this._sttStatus = '';
                 }
             },
             onError: (error) => {
                 this._sttListening = false;
                 this._sttStatus = `Speech input error: ${error}`;
+                this.services.sttService.stop();
             },
         });
     }
