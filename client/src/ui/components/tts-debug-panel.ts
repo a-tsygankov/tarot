@@ -96,6 +96,7 @@ export class TtsDebugPanel extends LitElement {
 
     override disconnectedCallback(): void {
         super.disconnectedCallback();
+        this.services?.sttService?.stop();
         this.unsubscribe?.();
     }
 

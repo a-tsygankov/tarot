@@ -54,7 +54,7 @@ export class DashboardPanelLite extends LitElement {
     @state() private authenticated = false;
     @state() private error = '';
     @state() private keyInput = '';
-    @state() private days = 7;
+    @state() private days = 1;
     @state() private lastRefresh = '';
 
     private adminKey = '';

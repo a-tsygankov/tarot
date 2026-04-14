@@ -231,15 +231,21 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .map(([language, count]) => ({ language, count }))
             .sort((a, b) => b.count - a.count);
 
+        // Filter entities to the selected date scope
+        const cutoff = dates[dates.length - 1]; // earliest date in range (YYYY-MM-DD)
+        const scopedUsers = allUsers.filter(u => u.lastSeenAt >= cutoff);
+        const scopedSessions = allSessions.filter(s => s.createdAt >= cutoff);
+        const scopedGames = allGames.filter(g => g.createdAt >= cutoff);
+
         const sessionsByUid = new Map<string, SessionDocument[]>();
-        for (const session of allSessions) {
+        for (const session of scopedSessions) {
             const current = sessionsByUid.get(session.uid) ?? [];
             current.push(session);
             sessionsByUid.set(session.uid, current);
         }
 
         const gamesByUid = new Map<string, GameDocument[]>();
-        for (const game of allGames) {
+        for (const game of scopedGames) {
             const current = gamesByUid.get(game.uid) ?? [];
             current.push(game);
             gamesByUid.set(game.uid, current);
@@ -250,7 +256,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             traitsByUserId.set(traits.userId, traits);
         }
 
-        const users = allUsers
+        const users = scopedUsers
             .map(user => {
                 const userSessions = (sessionsByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
                 const userGames = (gamesByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -280,9 +286,9 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             })
             .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
 
-        const sessions = allSessions
+        const sessions = scopedSessions
             .map(session => {
-                const sessionGames = allGames
+                const sessionGames = scopedGames
                     .filter(game => game.sessionId === session.sessionId)
                     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
                 return {
@@ -302,7 +308,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         const locationMap = new Map<string, DashboardResponse['locations'][number]>();
-        for (const game of allGames) {
+        for (const game of scopedGames) {
             const key = buildLocationKey(game.location?.city ?? null, game.location?.country ?? null);
             if (!game.location?.city && !game.location?.country) {
                 continue;
@@ -329,7 +335,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
             locationMap.set(key, current);
         }
-        for (const session of allSessions) {
+        for (const session of scopedSessions) {
             if (!session.city && !session.country) {
                 continue;
             }
