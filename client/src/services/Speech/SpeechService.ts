@@ -47,6 +47,10 @@ export class SpeechService implements ISpeechService {
         userContext: UserContext,
         progress?: IProgressReporter,
     ): Promise<void> {
+        if (userContext.muted) {
+            throw new Error('Audio is muted in Settings.');
+        }
+
         if (!this.preferences.resolveVoiceEnabled(userContext)) {
             throw new Error('Voice playback is turned off in Settings.');
         }

@@ -186,6 +186,15 @@ export class ReadingDisplay extends LitElement {
         return this.services?.gameContext;
     }
 
+    override updated(changedProperties: Map<PropertyKey, unknown>): void {
+        if (changedProperties.has('version') && this.services?.userContext.muted) {
+            this.services.speechService.stop();
+            this._speaking = false;
+            this._paused = false;
+            this._ttsStatus = '';
+        }
+    }
+
     override render() {
         if (!this._game?.reading) {
             return html`<div class="center" style="min-height:50vh">
@@ -206,6 +215,9 @@ export class ReadingDisplay extends LitElement {
             <div class="reading-container">
                 ${cards.map((card, index) => {
                     const dealt = dealtCards[index];
+                    const effectiveReversed = this.services.userContext.noReversedCards
+                        ? false
+                        : (dealt?.reversed ?? false);
                     return html`
                     <div class="card-reading">
                         <div class="card-reading-header">
@@ -219,7 +231,7 @@ export class ReadingDisplay extends LitElement {
                                     size="insight"
                                     .cardName=${dealt?.name ?? card.name}
                                     .position=${dealt?.position ?? card.position}
-                                    .reversed=${dealt?.reversed ?? false}
+                                    .reversed=${effectiveReversed}
                                     .previewEnabled=${true}
                                     .audioCueService=${this.services.audioCueService}
                                     .showMeta=${false}
@@ -398,7 +410,7 @@ export class ReadingDisplay extends LitElement {
                 cards: (game.cards ?? []).map(card => ({
                     name: card.name,
                     position: card.position,
-                    reversed: card.reversed,
+                    reversed: this.services.userContext.noReversedCards ? false : card.reversed,
                 })),
             });
             if (!blob) {

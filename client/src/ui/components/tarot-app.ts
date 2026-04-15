@@ -436,6 +436,8 @@ export class TarotApp extends LitElement {
                         @close=${this._toggleSettings}
                         @language-changed=${this._onLanguageOrToneChanged}
                         @tone-changed=${this._onLanguageOrToneChanged}
+                        @reading-options-changed=${this._onReadingOptionsChanged}
+                        @audio-settings-changed=${this._onAudioSettingsChanged}
                     ></settings-panel>
                 </div>
             ` : nothing}
@@ -490,6 +492,7 @@ export class TarotApp extends LitElement {
                 return html`
                     <card-spread
                         .services=${this._services}
+                        .version=${this._readingVersion}
                         @reading-ready=${this._onReadingReady}
                         @loading=${(e: CustomEvent) => { this._isLoading = e.detail; }}
                     ></card-spread>
@@ -646,6 +649,38 @@ export class TarotApp extends LitElement {
         } finally {
             this._isLoading = false;
         }
+    }
+
+    private async _onReadingOptionsChanged(): Promise<void> {
+        const game = this._services?.gameContext;
+        if (!game) return;
+
+        game.normalizeCards(this._services.userContext.noReversedCards);
+        this._readingVersion += 1;
+
+        if (!game.reading) {
+            return;
+        }
+
+        this._isLoading = true;
+        try {
+            const response = await this._services.apiService.fetchReadingAsync(game, {});
+            game.applyReading(response);
+            if (response.userContextDelta) {
+                this._services.userContext.applyAiUpdate(response.userContextDelta);
+            }
+            this._readingVersion += 1;
+        } catch (err) {
+            console.error('Re-request reading failed:', err instanceof Error ? err.message : err);
+        } finally {
+            this._isLoading = false;
+        }
+    }
+
+    private _onAudioSettingsChanged(): void {
+        this._services.speechService.stop();
+        void this._services.audioCueService.syncSettings();
+        this._readingVersion += 1;
     }
 }
 
