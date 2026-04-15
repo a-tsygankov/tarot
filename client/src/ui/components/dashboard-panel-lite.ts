@@ -53,7 +53,7 @@ export class DashboardPanelLite extends LitElement {
     @state() private authenticated = false;
     @state() private error = '';
     @state() private keyInput = '';
-    @state() private days = 7;
+    @state() private days = 1;
     @state() private lastRefresh = '';
 
     private adminKey = '';
@@ -119,7 +119,7 @@ export class DashboardPanelLite extends LitElement {
         return html`
             <div class="controls">
                 <div class="row">
-                    ${([7, 14, 30] as const).map(days => html`<button class="toggle ${this.days === days ? 'active' : ''}" @click=${() => this.changeDays(days)}>${days}d</button>`)}
+                    ${([1, 7, 14, 30] as const).map(days => html`<button class="toggle ${this.days === days ? 'active' : ''}" @click=${() => this.changeDays(days)}>${days}d</button>`)}
                     <button class="toggle" @click=${this.fetchDashboard}>Refresh</button>
                     <button class="toggle" @click=${this.toggleAuto}>Auto</button>
                 </div>

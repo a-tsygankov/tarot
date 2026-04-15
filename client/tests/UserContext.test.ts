@@ -40,6 +40,8 @@ describe('UserContext', () => {
         expect(ctx.language).toBe('ENG');
         expect(ctx.tone).toBe('Mystical');
         expect(ctx.theme).toBe('dusk');
+        expect(ctx.noReversedCards).toBe(false);
+        expect(ctx.muted).toBe(false);
         expect(ctx.voicePreference).toBe('female');
         expect(ctx.ttsProvider).toBe('piper');
         expect(ctx.traits).toEqual({});
@@ -58,6 +60,8 @@ describe('UserContext', () => {
         ctx.gender = 'female';
         ctx.language = 'RUS';
         ctx.tone = 'Ironic';
+        ctx.noReversedCards = true;
+        ctx.muted = true;
         ctx.voicePreference = 'off';
         ctx.ttsProvider = 'browser';
         ctx.traits = { zodiac_sign: 'Scorpio' };
@@ -70,10 +74,25 @@ describe('UserContext', () => {
         expect(ctx2.gender).toBe('female');
         expect(ctx2.language).toBe('RUS');
         expect(ctx2.tone).toBe('Ironic');
+        expect(ctx2.noReversedCards).toBe(true);
+        expect(ctx2.muted).toBe(true);
         expect(ctx2.voicePreference).toBe('off');
         expect(ctx2.ttsProvider).toBe('browser');
         expect(ctx2.traits).toEqual({ zodiac_sign: 'Scorpio' });
         expect(ctx2.totalReadings).toBe(5);
+    });
+
+    it('persists no reversed cards and mute options independently', () => {
+        const ctx = new UserContext();
+        ctx.noReversedCards = true;
+        ctx.muted = true;
+        ctx.save();
+
+        const restored = new UserContext();
+        restored.restore();
+
+        expect(restored.noReversedCards).toBe(true);
+        expect(restored.muted).toBe(true);
     });
 
     it('defaults to browser TTS on iPhone devices', () => {

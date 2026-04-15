@@ -177,15 +177,22 @@ export class ReadingDisplay extends LitElement {
     @state() private _speaking = false;
     @state() private _paused = false;
     @state() private _ttsStatus = '';
-    @state() private _showOverallActions = false;
     @state() private _copyTooltip = false;
 
-    private _overallActionsTimer: ReturnType<typeof setTimeout> | null = null;
     private _copyTooltipTimer: ReturnType<typeof setTimeout> | null = null;
     private readonly _readingImageExporter = new ReadingImageExporter();
 
     private get _game() {
         return this.services?.gameContext;
+    }
+
+    override updated(changedProperties: Map<PropertyKey, unknown>): void {
+        if (changedProperties.has('version') && this.services?.userContext.muted) {
+            this.services.speechService.stop();
+            this._speaking = false;
+            this._paused = false;
+            this._ttsStatus = '';
+        }
     }
 
     override render() {
@@ -208,6 +215,9 @@ export class ReadingDisplay extends LitElement {
             <div class="reading-container">
                 ${cards.map((card, index) => {
                     const dealt = dealtCards[index];
+                    const effectiveReversed = this.services.userContext.noReversedCards
+                        ? false
+                        : (dealt?.reversed ?? false);
                     return html`
                     <div class="card-reading">
                         <div class="card-reading-header">
@@ -221,7 +231,7 @@ export class ReadingDisplay extends LitElement {
                                     size="insight"
                                     .cardName=${dealt?.name ?? card.name}
                                     .position=${dealt?.position ?? card.position}
-                                    .reversed=${dealt?.reversed ?? false}
+                                    .reversed=${effectiveReversed}
                                     .previewEnabled=${true}
                                     .audioCueService=${this.services.audioCueService}
                                     .showMeta=${false}
@@ -235,17 +245,15 @@ export class ReadingDisplay extends LitElement {
                 `})}
 
                 ${overall ? html`
-                    <div class="overall-section" @click=${this._revealOverallActions}>
-                        ${this._showOverallActions ? html`
-                            <div class="overall-actions">
-                                <button class="overall-action" title="Download reading image" @click=${this._downloadReadingImage}>
-                                    ${this._pictureIcon()}
-                                </button>
-                                <button class="overall-action" title="Copy reading text" @click=${this._copyOverallReading}>
-                                    ${this._copyIcon()}
-                                </button>
-                            </div>
-                        ` : nothing}
+                    <div class="overall-section">
+                        <div class="overall-actions">
+                            <button class="overall-action" title="Download reading image" @click=${this._downloadReadingImage}>
+                                ${this._pictureIcon()}
+                            </button>
+                            <button class="overall-action" title="Copy reading text" @click=${this._copyOverallReading}>
+                                ${this._copyIcon()}
+                            </button>
+                        </div>
                         ${this._copyTooltip ? html`
                             <div class="copy-tooltip">Text copied to clipboard</div>
                         ` : nothing}
@@ -333,11 +341,6 @@ export class ReadingDisplay extends LitElement {
         this.dispatchEvent(new CustomEvent('new-reading'));
     }
 
-    private _revealOverallActions(): void {
-        this._showOverallActions = true;
-        this.resetOverallActionsTimer();
-    }
-
     private _copyIcon() {
         return html`
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -386,7 +389,6 @@ export class ReadingDisplay extends LitElement {
             this._copyTooltipTimer = setTimeout(() => {
                 this._copyTooltip = false;
             }, 1000);
-            this.resetOverallActionsTimer();
         } catch (error) {
             console.error('Copy failed:', error);
         }
@@ -408,7 +410,7 @@ export class ReadingDisplay extends LitElement {
                 cards: (game.cards ?? []).map(card => ({
                     name: card.name,
                     position: card.position,
-                    reversed: card.reversed,
+                    reversed: this.services.userContext.noReversedCards ? false : card.reversed,
                 })),
             });
             if (!blob) {
@@ -434,27 +436,15 @@ export class ReadingDisplay extends LitElement {
                 link.click();
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             }
-            this.resetOverallActionsTimer();
         } catch (error) {
             console.error('Reading image export failed:', error);
         }
     }
 
-    private resetOverallActionsTimer(): void {
-        if (this._overallActionsTimer) {
-            clearTimeout(this._overallActionsTimer);
-        }
-        this._overallActionsTimer = setTimeout(() => {
-            this._showOverallActions = false;
-        }, 3000);
-    }
 
     override disconnectedCallback(): void {
         super.disconnectedCallback();
         this.services?.speechService.stop();
-        if (this._overallActionsTimer) {
-            clearTimeout(this._overallActionsTimer);
-        }
         if (this._copyTooltipTimer) {
             clearTimeout(this._copyTooltipTimer);
         }

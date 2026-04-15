@@ -6,6 +6,8 @@ const STORAGE_KEYS = {
     lang: 'tarot_lang',
     tone: 'tarot_tone',
     theme: 'tarot_theme',
+    noReversedCards: 'tarot_no_reversed_cards',
+    muted: 'tarot_muted',
     voicePreference: 'tarot_voice_preference',
     ttsProvider: 'tarot_tts_provider',
     ttsSpeed: 'tarot_tts_speed',
@@ -33,6 +35,8 @@ export class UserContext implements IUserContext {
     language = 'ENG';
     tone = 'Mystical';
     theme = 'dusk';
+    noReversedCards = false;
+    muted = false;
     voicePreference: 'female' | 'male' | 'off' = 'female';
     ttsProvider: 'browser' | 'piper';
     totalReadings = 0;
@@ -53,6 +57,8 @@ export class UserContext implements IUserContext {
         this.language = localStorage.getItem(STORAGE_KEYS.lang) ?? 'ENG';
         this.tone = localStorage.getItem(STORAGE_KEYS.tone) ?? 'Mystical';
         this.theme = localStorage.getItem(STORAGE_KEYS.theme) ?? 'dusk';
+        this.noReversedCards = (localStorage.getItem(STORAGE_KEYS.noReversedCards) ?? 'false') === 'true';
+        this.muted = (localStorage.getItem(STORAGE_KEYS.muted) ?? 'false') === 'true';
         this.voicePreference = (localStorage.getItem(STORAGE_KEYS.voicePreference) as 'female' | 'male' | 'off' | null) ?? 'female';
         this.ttsProvider = (localStorage.getItem(STORAGE_KEYS.ttsProvider) as 'browser' | 'piper' | null) ?? this.detectDefaultTtsProvider();
         this.totalReadings = parseInt(localStorage.getItem(STORAGE_KEYS.totalReadings) ?? '0', 10);
@@ -77,6 +83,8 @@ export class UserContext implements IUserContext {
         localStorage.setItem(STORAGE_KEYS.lang, this.language);
         localStorage.setItem(STORAGE_KEYS.tone, this.tone);
         localStorage.setItem(STORAGE_KEYS.theme, this.theme);
+        localStorage.setItem(STORAGE_KEYS.noReversedCards, String(this.noReversedCards));
+        localStorage.setItem(STORAGE_KEYS.muted, String(this.muted));
         localStorage.setItem(STORAGE_KEYS.voicePreference, this.voicePreference);
         localStorage.setItem(STORAGE_KEYS.ttsProvider, this.ttsProvider);
         localStorage.setItem(STORAGE_KEYS.totalReadings, String(this.totalReadings));

@@ -268,6 +268,8 @@ export class SettingsPanel extends LitElement {
     @state() private _theme = 'dusk';
     @state() private _name = '';
     @state() private _voice = 'Female';
+    @state() private _noReversedCards = false;
+    @state() private _muted = false;
     @state() private _ttsProvider: 'browser' | 'piper' = 'browser';
     @state() private _speed = 1.0;
     @state() private _font = 'Palatino';
@@ -288,6 +290,8 @@ export class SettingsPanel extends LitElement {
             this._deckStyle = getCurrentDeckStyle();
             this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
             this._fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
+            this._noReversedCards = uc.noReversedCards;
+            this._muted = uc.muted;
             this._voice = this._voiceLabelFromPreference(uc.voicePreference);
             this._ttsProvider = uc.ttsProvider;
         }
@@ -357,6 +361,34 @@ export class SettingsPanel extends LitElement {
                                 title=${d.description}
                             >${d.label}</button>
                         `)}
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="section-label">Card Orientation</div>
+                    <div class="option-grid">
+                        <button
+                            class="option-btn ${!this._noReversedCards ? 'selected' : ''}"
+                            @click=${() => this._setNoReversedCards(false)}
+                        >Allow Reversed</button>
+                        <button
+                            class="option-btn ${this._noReversedCards ? 'selected' : ''}"
+                            @click=${() => this._setNoReversedCards(true)}
+                        >No Reversed Cards</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="section-label">Sound</div>
+                    <div class="option-grid">
+                        <button
+                            class="option-btn ${!this._muted ? 'selected' : ''}"
+                            @click=${() => this._setMuted(false)}
+                        >Sound On</button>
+                        <button
+                            class="option-btn ${this._muted ? 'selected' : ''}"
+                            @click=${() => this._setMuted(true)}
+                        >Mute All</button>
                     </div>
                 </div>
 
@@ -520,6 +552,28 @@ export class SettingsPanel extends LitElement {
         if (this.services) {
             this.services.userContext.ttsProvider = provider;
             this.services.userContext.save();
+        }
+    }
+
+    private _setNoReversedCards(enabled: boolean): void {
+        this._noReversedCards = enabled;
+        if (this.services) {
+            this.services.userContext.noReversedCards = enabled;
+            this.services.userContext.save();
+            this.dispatchEvent(new CustomEvent('reading-options-changed', { bubbles: true, composed: true }));
+        }
+    }
+
+    private async _setMuted(enabled: boolean): Promise<void> {
+        this._muted = enabled;
+        if (this.services) {
+            this.services.userContext.muted = enabled;
+            this.services.userContext.save();
+            if (enabled) {
+                this.services.speechService.stop();
+            }
+            await this.services.audioCueService.syncSettings();
+            this.dispatchEvent(new CustomEvent('audio-settings-changed', { bubbles: true, composed: true }));
         }
     }
 

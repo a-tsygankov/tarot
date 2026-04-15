@@ -101,6 +101,24 @@ describe('SpeechService', () => {
         expect(tts.speakAsync).not.toHaveBeenCalled();
     });
 
+    it('does not play audio when mute is enabled', async () => {
+        const tts: ITtsService = {
+            isAvailable: vi.fn(() => true),
+            speakAsync: vi.fn().mockResolvedValue(undefined),
+            stop: vi.fn(),
+            pause: vi.fn(),
+            resume: vi.fn(),
+        };
+
+        const service = new SpeechService(tts, new SpeechPreferencesResolver(CONFIG));
+        const userContext = new UserContext();
+        userContext.muted = true;
+
+        await expect(service.speakReadingAsync('Prediction', userContext))
+            .rejects.toThrow('Audio is muted in Settings.');
+        expect(tts.speakAsync).not.toHaveBeenCalled();
+    });
+
     it('routes browser TTS without Piper voice ids when browser engine is selected', async () => {
         const speakAsync = vi.fn().mockResolvedValue(undefined);
         const tts: ITtsService = {

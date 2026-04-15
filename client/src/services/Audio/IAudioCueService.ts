@@ -4,4 +4,5 @@ export interface IAudioCueService {
     playCardPreviewClose(): Promise<void>;
     startOracleWaiting(): Promise<void>;
     stopOracleWaiting(): Promise<void>;
+    syncSettings(): Promise<void>;
 }

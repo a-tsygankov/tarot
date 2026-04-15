@@ -594,7 +594,7 @@ export class DashboardPanel extends LitElement {
     @state() private _loading = false;
     @state() private _error = '';
     @state() private _keyInput = '';
-    @state() private _days = 7;
+    @state() private _days = 1;
     @state() private _authenticated = false;
     @state() private _validating = false;
 
@@ -757,7 +757,7 @@ export class DashboardPanel extends LitElement {
 
         return html`
             <div class="controls">
-                ${([7, 14, 30] as const).map(d => html`
+                ${([1, 7, 14, 30] as const).map(d => html`
                     <button
                         class="period-btn ${this._days === d ? 'active' : ''}"
                         @click=${() => { this._days = d; this._fetchDashboard(); }}
