@@ -289,6 +289,7 @@ export class CardSpread extends LitElement {
     ];
 
     @property({ attribute: false }) services!: AppServices;
+    @property({ type: Number }) version = 0;
     @query('.question-input') private _questionInput?: HTMLInputElement;
 
     @state() private _dealtCards: Array<{ name: string; position: string; reversed: boolean }> = [];
@@ -329,6 +330,13 @@ export class CardSpread extends LitElement {
         super.disconnectedCallback();
         void this.services?.audioCueService.stopOracleWaiting();
         this.services?.sttService.stop();
+    }
+
+    override willUpdate(changedProperties: Map<PropertyKey, unknown>): void {
+        if (changedProperties.has('version') && this.services?.userContext.noReversedCards) {
+            this._dealtCards = this._dealtCards.map(card => ({ ...card, reversed: false }));
+            this.services.gameContext.normalizeCards(true);
+        }
     }
 
     override render() {
@@ -444,6 +452,7 @@ export class CardSpread extends LitElement {
 
         const card = this._dealtCards[index];
         if (card) {
+            const effectiveReversed = this.services.userContext.noReversedCards ? false : card.reversed;
             return html`
                 <div class="card-slot dealt" style=${slotStyle}>
                     <tarot-card
@@ -451,7 +460,7 @@ export class CardSpread extends LitElement {
                         size=${this._spreadSize === 1 ? 'insight' : 'spread'}
                         .cardName=${card.name}
                         .position=${card.position}
-                        .reversed=${card.reversed}
+                        .reversed=${effectiveReversed}
                         .showMeta=${true}
                         .previewEnabled=${true}
                         .audioCueService=${this.services.audioCueService}
@@ -490,7 +499,7 @@ export class CardSpread extends LitElement {
 
     private _dealCard(position: string): void {
         const name = this._drawRandomCard();
-        const reversed = Math.random() < 0.3;
+        const reversed = this.services.userContext.noReversedCards ? false : Math.random() < 0.3;
 
         const card = { name, position, reversed };
         this._dealtCards = [...this._dealtCards, card];
@@ -528,6 +537,11 @@ export class CardSpread extends LitElement {
         this.dispatchEvent(new CustomEvent('loading', { detail: true }));
 
         const game = this.services.gameContext;
+        game.normalizeCards(this.services.userContext.noReversedCards);
+        this._dealtCards = this._dealtCards.map(card => ({
+            ...card,
+            reversed: this.services.userContext.noReversedCards ? false : card.reversed,
+        }));
         game.question = this._question || null;
         game.topic = this._selectedTopic || null;
 

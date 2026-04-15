@@ -33,7 +33,7 @@ export class ApiService implements IApiService {
 
         const body: ReadingRequest = {
             userContext: this.userContext.toApiPayload(),
-            gameContext: game.toApiPayload(),
+            gameContext: game.toApiPayload({ noReversedCards: this.userContext.noReversedCards }),
         };
 
         const result = await this.post<ReadingResponse>(
@@ -55,7 +55,7 @@ export class ApiService implements IApiService {
 
         const body: FollowUpRequest = {
             userContext: this.userContext.toApiPayload(),
-            gameContext: game.toApiPayload(),
+            gameContext: game.toApiPayload({ noReversedCards: this.userContext.noReversedCards }),
             question,
         };
 

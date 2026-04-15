@@ -53,7 +53,7 @@ export function createAppServices(): AppServices {
     }, userContext.ttsProvider);
     const speechPreferences = new SpeechPreferencesResolver(CONFIG);
     const speechService = new SpeechService(ttsService, speechPreferences);
-    const audioCueService: IAudioCueService = new AudioCueService();
+    const audioCueService: IAudioCueService = new AudioCueService(userContext);
 
     // STT — browser only
     const sttService: ISttService = new BrowserSttService();

@@ -82,17 +82,29 @@ export class GameContext implements IGameContext {
     }
 
     /** Serialize for API requests. */
-    toApiPayload() {
+    toApiPayload(options?: { noReversedCards?: boolean }) {
+        const cards = this.getCardsForOutput(options);
         return {
             gameId: this.gameId,
             spreadType: this.spreadType,
-            cards: this.cards,
+            cards,
             question: this.question,
             topic: this.topic,
             readingDigest: this.readingDigest,
             qaDigests: this.qaHistory.map(q => ({ role: q.role, digest: q.digest })),
             turnCount: this.turnCount,
         };
+    }
+
+    normalizeCards(noReversedCards: boolean): void {
+        if (!noReversedCards) {
+            return;
+        }
+
+        this.cards = this.cards.map(card => ({
+            ...card,
+            reversed: false,
+        }));
     }
 
     /** Reset for new game. */
@@ -108,5 +120,16 @@ export class GameContext implements IGameContext {
         this.readingLang = null;
         this.readingTone = null;
         this.turnCount = 0;
+    }
+
+    private getCardsForOutput(options?: { noReversedCards?: boolean }): CardDraw[] {
+        if (!options?.noReversedCards) {
+            return this.cards;
+        }
+
+        return this.cards.map(card => ({
+            ...card,
+            reversed: false,
+        }));
     }
 }

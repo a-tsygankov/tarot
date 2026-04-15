@@ -15,6 +15,8 @@ export interface IUserContext {
     language: string;
     tone: string;
     theme: string;
+    noReversedCards: boolean;
+    muted: boolean;
     voicePreference: 'female' | 'male' | 'off';
     ttsProvider: 'browser' | 'piper';
     totalReadings: number;

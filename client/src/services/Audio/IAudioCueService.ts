@@ -9,4 +9,5 @@ export interface IAudioCueService {
     playErrorPulse(): Promise<void>;
     startOracleWaiting(): Promise<void>;
     stopOracleWaiting(): Promise<void>;
+    syncSettings(): Promise<void>;
 }

@@ -1,5 +1,6 @@
 import { TarotSoundManager } from './TarotSoundManager.js';
 import type { IAudioCueService } from './IAudioCueService.js';
+import type { UserContext } from '../../models/UserContext.js';
 
 export class AudioCueService implements IAudioCueService {
     private readonly soundManager = new TarotSoundManager({
@@ -8,7 +9,10 @@ export class AudioCueService implements IAudioCueService {
 
     private oracleWaitingPlayback: { stop: (options?: { durationMs?: number }) => Promise<void> } | null = null;
 
+    constructor(private readonly userContext: UserContext) {}
+
     async playCardReveal(): Promise<void> {
+        if (this.userContext.muted) return;
         try {
             await this.soundManager.playCardReveal({ fadeInMs: 20 });
         } catch (error) {
@@ -17,6 +21,7 @@ export class AudioCueService implements IAudioCueService {
     }
 
     async playCardPreviewOpen(): Promise<void> {
+        if (this.userContext.muted) return;
         try {
             await this.soundManager.playCardPreview({
                 fadeInMs: 8,
@@ -29,6 +34,7 @@ export class AudioCueService implements IAudioCueService {
     }
 
     async playCardPreviewClose(): Promise<void> {
+        if (this.userContext.muted) return;
         try {
             await this.soundManager.playCardPreview({
                 fadeInMs: 4,
@@ -81,6 +87,7 @@ export class AudioCueService implements IAudioCueService {
     }
 
     async startOracleWaiting(): Promise<void> {
+        if (this.userContext.muted) return;
         try {
             await this.stopOracleWaiting();
             this.oracleWaitingPlayback = await this.soundManager.playOracleWaiting({
@@ -100,5 +107,11 @@ export class AudioCueService implements IAudioCueService {
         const playback = this.oracleWaitingPlayback;
         this.oracleWaitingPlayback = null;
         await playback.stop({ durationMs: 220 });
+    }
+
+    async syncSettings(): Promise<void> {
+        if (this.userContext.muted) {
+            await this.stopOracleWaiting();
+        }
     }
 }
