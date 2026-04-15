@@ -66,11 +66,11 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.log(`Total readings: ${userContext.totalReadings}`);
     console.log(`Device: ${userContext.deviceInfo?.platform ?? 'unknown'} | ${userContext.deviceInfo?.screenWidth}×${userContext.deviceInfo?.screenHeight}`);
     // Show accumulated traits
-    const traitEntries = Object.entries(userContext.traits);
+    const traitEntries = Object.entries(userContext.userTraits?.traits ?? {});
     if (traitEntries.length > 0) {
         console.group('Known traits');
-        for (const [key, value] of traitEntries) {
-            console.log(`${key.replace(/_/g, ' ')}: ${value}`);
+        for (const [key, values] of traitEntries) {
+            console.log(`${key.replace(/_/g, ' ')}: ${values.join(', ')}`);
         }
         console.groupEnd();
     } else {

@@ -37,7 +37,7 @@ export const WORKER_CONFIG = {
         eventsPerMinute: 100,
     },
 
-    schemaVersion: '2026.04.01-01',
+    schemaVersion: '2026.04.08-01',
 } as const;
 
 /**

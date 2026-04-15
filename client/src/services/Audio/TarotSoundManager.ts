@@ -78,7 +78,57 @@ export class TarotSoundManager {
     } = {}): Promise<SoundPlayback> {
         const context = this.getContext();
         await this.initialize();
-        return this.playOracleWaitingLoop(context, options);
+        return this.playOracleBowlHum(context, options);
+    }
+
+    async playButtonPress(options: {
+        fadeInMs?: number;
+        signal?: AbortSignal;
+        volume?: number;
+    } = {}): Promise<SoundPlayback> {
+        const context = this.getContext();
+        await this.initialize();
+        return this.playButtonPing(context, options);
+    }
+
+    async playPanelOpen(options: {
+        fadeInMs?: number;
+        signal?: AbortSignal;
+        volume?: number;
+    } = {}): Promise<SoundPlayback> {
+        const context = this.getContext();
+        await this.initialize();
+        return this.playPanelSweep(context, { ...options, closing: false });
+    }
+
+    async playPanelClose(options: {
+        fadeInMs?: number;
+        signal?: AbortSignal;
+        volume?: number;
+    } = {}): Promise<SoundPlayback> {
+        const context = this.getContext();
+        await this.initialize();
+        return this.playPanelSweep(context, { ...options, closing: true });
+    }
+
+    async playOracleArrival(options: {
+        fadeInMs?: number;
+        signal?: AbortSignal;
+        volume?: number;
+    } = {}): Promise<SoundPlayback> {
+        const context = this.getContext();
+        await this.initialize();
+        return this.playOracleArrivalChord(context, options);
+    }
+
+    async playErrorPulse(options: {
+        fadeInMs?: number;
+        signal?: AbortSignal;
+        volume?: number;
+    } = {}): Promise<SoundPlayback> {
+        const context = this.getContext();
+        await this.initialize();
+        return this.playErrorPulseTone(context, options);
     }
 
     async stopAll(options: { durationMs?: number } = {}): Promise<void> {
@@ -304,159 +354,98 @@ export class TarotSoundManager {
         return playback;
     }
 
-    private playOracleWaitingLoop(
+    private playOracleBowlHum(
         context: AudioContext,
         options: { fadeInMs?: number; loop?: boolean; signal?: AbortSignal; volume?: number },
     ): SoundPlayback {
-        const playback = this.createPlayback('oracle-waiting', options.volume ?? 0.3);
+        const playback = this.createPlayback('oracle-waiting', options.volume ?? 0.34);
         this.attachAbortSignal(playback, options.signal);
-        this.applyFadeIn(playback.output, options.fadeInMs ?? 420);
+        this.applyFadeIn(playback.output, options.fadeInMs ?? 650);
 
-        const orbOscillator = context.createOscillator();
-        orbOscillator.type = 'sine';
-        orbOscillator.frequency.value = 146.83;
-
-        const shimmerOscillator = context.createOscillator();
-        shimmerOscillator.type = 'triangle';
-        shimmerOscillator.frequency.value = 293.66;
-
-        const haloOscillator = context.createOscillator();
-        haloOscillator.type = 'sine';
-        haloOscillator.frequency.value = 440;
-
-        const orbGain = context.createGain();
-        orbGain.gain.value = 0.16;
-
-        const shimmerGain = context.createGain();
-        shimmerGain.gain.value = 0.045;
-
-        const haloGain = context.createGain();
-        haloGain.gain.value = 0.03;
-
-        const orbFilter = context.createBiquadFilter();
-        orbFilter.type = 'lowpass';
-        orbFilter.frequency.value = 620;
-        orbFilter.Q.value = 1.3;
+        const masterFilter = context.createBiquadFilter();
+        masterFilter.type = 'lowpass';
+        masterFilter.frequency.value = 1800;
+        masterFilter.Q.value = 0.8;
 
         const shimmerFilter = context.createBiquadFilter();
         shimmerFilter.type = 'bandpass';
-        shimmerFilter.frequency.value = 1180;
-        shimmerFilter.Q.value = 1.8;
+        shimmerFilter.frequency.value = 1600;
+        shimmerFilter.Q.value = 1.4;
 
-        const haloFilter = context.createBiquadFilter();
-        haloFilter.type = 'highpass';
-        haloFilter.frequency.value = 900;
-        haloFilter.Q.value = 0.7;
+        masterFilter.connect(playback.output);
+        shimmerFilter.connect(playback.output);
 
-        const masterTone = context.createBiquadFilter();
-        masterTone.type = 'lowpass';
-        masterTone.frequency.value = 1500;
-        masterTone.Q.value = 0.9;
+        const baseFrequencies = [220, 330, 440, 554, 660];
+        const now = context.currentTime;
+        const cycleSeconds = 10;
 
-        const pulseLfo = context.createOscillator();
-        pulseLfo.type = 'sine';
-        pulseLfo.frequency.value = 0.11;
+        for (const [index, baseFrequency] of baseFrequencies.entries()) {
+            const primary = context.createOscillator();
+            primary.type = 'sine';
+            primary.frequency.value = baseFrequency;
 
-        const pulseDepth = context.createGain();
-        pulseDepth.gain.value = 0.028;
+            const detuned = context.createOscillator();
+            detuned.type = 'sine';
+            detuned.frequency.value = baseFrequency + 1.2;
 
-        const shimmerLfo = context.createOscillator();
-        shimmerLfo.type = 'sine';
-        shimmerLfo.frequency.value = 0.19;
+            const toneGain = context.createGain();
+            const targetGain = 0.04 / (index + 1);
+            toneGain.gain.setValueAtTime(0, now);
+            toneGain.gain.linearRampToValueAtTime(targetGain, now + 2);
 
-        const shimmerDepth = context.createGain();
-        shimmerDepth.gain.value = 80;
+            if (!options.loop) {
+                toneGain.gain.setValueAtTime(targetGain, now + cycleSeconds - 1.5);
+                toneGain.gain.linearRampToValueAtTime(0.0001, now + cycleSeconds);
+            }
 
-        const haloLfo = context.createOscillator();
-        haloLfo.type = 'triangle';
-        haloLfo.frequency.value = 0.31;
+            primary.connect(toneGain);
+            detuned.connect(toneGain);
+            toneGain.connect(masterFilter);
 
-        const haloDepth = context.createGain();
-        haloDepth.gain.value = 0.012;
+            primary.start();
+            detuned.start();
+            playback.sources.push(primary, detuned);
 
-        const noiseBufferLength = Math.floor(context.sampleRate * 2.8);
-        const noiseBuffer = context.createBuffer(1, noiseBufferLength, context.sampleRate);
-        const noiseData = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < noiseBufferLength; i += 1) {
-            const previous = i > 0 ? noiseData[i - 1] : 0;
-            noiseData[i] = (previous * 0.985) + ((Math.random() * 2 - 1) * 0.018);
+            if (!options.loop) {
+                primary.stop(now + cycleSeconds + 0.02);
+                detuned.stop(now + cycleSeconds + 0.02);
+            }
         }
 
-        const noiseSource = context.createBufferSource();
-        noiseSource.buffer = noiseBuffer;
-        noiseSource.loop = true;
+        const shimmer = context.createOscillator();
+        shimmer.type = 'sine';
+        shimmer.frequency.value = 1760;
 
-        const noiseFilter = context.createBiquadFilter();
-        noiseFilter.type = 'bandpass';
-        noiseFilter.frequency.value = 720;
-        noiseFilter.Q.value = 0.7;
+        const shimmerGain = context.createGain();
+        shimmerGain.gain.setValueAtTime(0, now);
+        shimmerGain.gain.linearRampToValueAtTime(0.01, now + 3);
+        if (!options.loop) {
+            shimmerGain.gain.setValueAtTime(0.01, now + cycleSeconds - 2);
+            shimmerGain.gain.linearRampToValueAtTime(0.0001, now + cycleSeconds);
+        }
 
-        const noiseGain = context.createGain();
-        noiseGain.gain.value = 0.038;
+        const lfo = context.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 3;
 
-        pulseLfo.connect(pulseDepth);
-        pulseDepth.connect(orbGain.gain);
+        const lfoGain = context.createGain();
+        lfoGain.gain.value = 0.006;
 
-        shimmerLfo.connect(shimmerDepth);
-        shimmerDepth.connect(shimmerFilter.frequency);
-
-        haloLfo.connect(haloDepth);
-        haloDepth.connect(haloGain.gain);
-
-        orbOscillator.connect(orbGain);
-        orbGain.connect(orbFilter);
-        orbFilter.connect(masterTone);
-
-        shimmerOscillator.connect(shimmerGain);
+        lfo.connect(lfoGain);
+        lfoGain.connect(shimmerGain.gain);
+        shimmer.connect(shimmerGain);
         shimmerGain.connect(shimmerFilter);
-        shimmerFilter.connect(masterTone);
 
-        haloOscillator.connect(haloGain);
-        haloGain.connect(haloFilter);
-        haloFilter.connect(masterTone);
-
-        noiseSource.connect(noiseFilter);
-        noiseFilter.connect(noiseGain);
-        noiseGain.connect(masterTone);
-
-        masterTone.connect(playback.output);
-
-        const now = context.currentTime;
-        orbOscillator.frequency.setValueAtTime(146.83, now);
-        orbOscillator.frequency.linearRampToValueAtTime(155.56, now + 7.5);
-        orbOscillator.frequency.linearRampToValueAtTime(146.83, now + 15);
-
-        shimmerOscillator.frequency.setValueAtTime(293.66, now);
-        shimmerOscillator.frequency.linearRampToValueAtTime(329.63, now + 5.5);
-        shimmerOscillator.frequency.linearRampToValueAtTime(277.18, now + 11);
-        shimmerOscillator.frequency.linearRampToValueAtTime(293.66, now + 16.5);
-
-        haloOscillator.frequency.setValueAtTime(440, now);
-        haloOscillator.frequency.linearRampToValueAtTime(493.88, now + 8);
-        haloOscillator.frequency.linearRampToValueAtTime(466.16, now + 15);
-
-        orbOscillator.start();
-        shimmerOscillator.start();
-        haloOscillator.start();
-        pulseLfo.start();
-        shimmerLfo.start();
-        haloLfo.start();
-        noiseSource.start();
-
-        playback.sources.push(
-            orbOscillator,
-            shimmerOscillator,
-            haloOscillator,
-            pulseLfo,
-            shimmerLfo,
-            haloLfo,
-            noiseSource,
-        );
+        shimmer.start();
+        lfo.start();
+        playback.sources.push(shimmer, lfo);
 
         if (!options.loop) {
+            shimmer.stop(now + cycleSeconds + 0.02);
+            lfo.stop(now + cycleSeconds + 0.02);
             window.setTimeout(() => {
                 void playback.stop();
-            }, 7000);
+            }, cycleSeconds * 1000);
         }
 
         return playback;
@@ -507,6 +496,156 @@ export class TarotSoundManager {
         this.trackSource(playback, source, durationSeconds * 1000);
         this.applyFadeIn(playback.output, options.fadeInMs);
         source.start();
+
+        return playback;
+    }
+
+    private playButtonPing(
+        context: AudioContext,
+        options: { fadeInMs?: number; signal?: AbortSignal; volume?: number },
+    ): SoundPlayback {
+        const playback = this.createPlayback('button-press', options.volume ?? 0.6);
+        this.attachAbortSignal(playback, options.signal);
+        this.applyFadeIn(playback.output, options.fadeInMs);
+
+        const osc = context.createOscillator();
+        osc.type = 'triangle';
+        const gain = context.createGain();
+        const filter = context.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 980;
+        filter.Q.value = 1.1;
+
+        const now = context.currentTime;
+        osc.frequency.setValueAtTime(720, now);
+        osc.frequency.exponentialRampToValueAtTime(980, now + 0.05);
+        osc.frequency.exponentialRampToValueAtTime(760, now + 0.14);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.22, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.17);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(playback.output);
+
+        this.trackSource(playback, osc, 220);
+        osc.start();
+        osc.stop(now + 0.18);
+
+        return playback;
+    }
+
+    private playPanelSweep(
+        context: AudioContext,
+        options: { fadeInMs?: number; signal?: AbortSignal; volume?: number; closing?: boolean },
+    ): SoundPlayback {
+        const durationSeconds = options.closing ? 0.24 : 0.32;
+        const playback = this.createPlayback(options.closing ? 'panel-close' : 'panel-open', options.volume ?? 0.68);
+        this.attachAbortSignal(playback, options.signal);
+
+        const bufferLength = Math.floor(context.sampleRate * durationSeconds);
+        const buffer = context.createBuffer(1, bufferLength, context.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferLength; i += 1) {
+            const t = i / context.sampleRate;
+            const envelope = options.closing
+                ? Math.exp(-t * 8.4)
+                : Math.sin(Math.min(1, t / durationSeconds) * Math.PI) * Math.exp(-t * 2.8);
+            data[i] = ((Math.random() * 2 - 1) * 0.07) * envelope;
+        }
+
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+
+        const bandPass = context.createBiquadFilter();
+        bandPass.type = 'bandpass';
+        bandPass.frequency.value = options.closing ? 1350 : 980;
+        bandPass.Q.value = 0.9;
+
+        const gain = context.createGain();
+        gain.gain.value = options.closing ? 0.78 : 0.9;
+
+        source.connect(bandPass);
+        bandPass.connect(gain);
+        gain.connect(playback.output);
+
+        this.trackSource(playback, source, durationSeconds * 1000);
+        this.applyFadeIn(playback.output, options.fadeInMs);
+        source.start();
+
+        return playback;
+    }
+
+    private playOracleArrivalChord(
+        context: AudioContext,
+        options: { fadeInMs?: number; signal?: AbortSignal; volume?: number },
+    ): SoundPlayback {
+        const playback = this.createPlayback('oracle-arrival', options.volume ?? 0.78);
+        this.attachAbortSignal(playback, options.signal);
+        this.applyFadeIn(playback.output, options.fadeInMs);
+
+        const now = context.currentTime;
+        const chord = [261.63, 329.63, 392.0];
+
+        for (const [index, frequency] of chord.entries()) {
+            const osc = context.createOscillator();
+            osc.type = index === 0 ? 'sine' : 'triangle';
+            osc.frequency.setValueAtTime(frequency, now);
+            osc.frequency.linearRampToValueAtTime(frequency * 1.01, now + 0.7);
+
+            const gain = context.createGain();
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.linearRampToValueAtTime(0.12 / (index + 1), now + 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.95);
+
+            const filter = context.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 1800;
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(playback.output);
+
+            this.trackSource(playback, osc, 1100);
+            osc.start();
+            osc.stop(now + 1);
+        }
+
+        return playback;
+    }
+
+    private playErrorPulseTone(
+        context: AudioContext,
+        options: { fadeInMs?: number; signal?: AbortSignal; volume?: number },
+    ): SoundPlayback {
+        const playback = this.createPlayback('error-pulse', options.volume ?? 0.52);
+        this.attachAbortSignal(playback, options.signal);
+        this.applyFadeIn(playback.output, options.fadeInMs);
+
+        const now = context.currentTime;
+        const osc = context.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(240, now);
+        osc.frequency.exponentialRampToValueAtTime(170, now + 0.18);
+
+        const gain = context.createGain();
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.15, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+        const filter = context.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 620;
+        filter.Q.value = 1;
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(playback.output);
+
+        this.trackSource(playback, osc, 280);
+        osc.start();
+        osc.stop(now + 0.24);
 
         return playback;
     }

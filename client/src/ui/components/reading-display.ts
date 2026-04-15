@@ -19,6 +19,7 @@ export class ReadingDisplay extends LitElement {
                 flex-direction: column;
                 gap: 1.2em;
                 padding-top: 0.5em;
+                padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
             }
 
             .card-reading {

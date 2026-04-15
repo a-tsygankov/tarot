@@ -46,6 +46,46 @@ export class AudioCueService implements IAudioCueService {
         }
     }
 
+    async playButtonPress(): Promise<void> {
+        try {
+            await this.soundManager.playButtonPress({ fadeInMs: 4, volume: 0.62 });
+        } catch (error) {
+            console.warn('Button press sound failed:', error);
+        }
+    }
+
+    async playPanelOpen(): Promise<void> {
+        try {
+            await this.soundManager.playPanelOpen({ fadeInMs: 10, volume: 0.72 });
+        } catch (error) {
+            console.warn('Panel open sound failed:', error);
+        }
+    }
+
+    async playPanelClose(): Promise<void> {
+        try {
+            await this.soundManager.playPanelClose({ fadeInMs: 4, volume: 0.58 });
+        } catch (error) {
+            console.warn('Panel close sound failed:', error);
+        }
+    }
+
+    async playOracleArrival(): Promise<void> {
+        try {
+            await this.soundManager.playOracleArrival({ fadeInMs: 12, volume: 0.78 });
+        } catch (error) {
+            console.warn('Oracle arrival sound failed:', error);
+        }
+    }
+
+    async playErrorPulse(): Promise<void> {
+        try {
+            await this.soundManager.playErrorPulse({ fadeInMs: 3, volume: 0.52 });
+        } catch (error) {
+            console.warn('Error pulse sound failed:', error);
+        }
+    }
+
     async startOracleWaiting(): Promise<void> {
         if (this.userContext.muted) return;
         try {

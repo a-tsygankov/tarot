@@ -1,6 +1,7 @@
 /**
  * API request/response contracts for all tarot-api Worker endpoints.
  */
+import type { DeviceInfo } from '../models/user-context.js';
 
 // ── Reading ──────────────────────────────────────────────────────────
 
@@ -13,6 +14,7 @@ export interface ReadingResponse {
     reading: ReadingResult;
     contextUpdate: string;
     userContextDelta: UserContextDelta;
+    userTraits: UserTraitsPayload | null;
     provider: string;
     model: string;
 }
@@ -39,6 +41,7 @@ export interface FollowUpResponse {
     questionDigest: string;
     answerDigest: string;
     userContextDelta: UserContextDelta | null;
+    userTraits: UserTraitsPayload | null;
 }
 
 // ── TTS ──────────────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ export interface SessionRequest {
     screenWidth?: number;
     screenHeight?: number;
     device?: string;
+    deviceInfo?: DeviceInfo;
 }
 
 // ── Event ────────────────────────────────────────────────────────────
@@ -105,7 +109,7 @@ export interface UserContextPayload {
     gender: string | null;
     birthdate: string | null;
     location: string | null;
-    traits: Record<string, string>;
+    userTraits: UserTraitsPayload | null;
     language: string;
     tone: string;
 }
@@ -133,5 +137,15 @@ export interface UserContextDelta {
     gender: string | null;
     birthdate: string | null;
     location: string | null;
-    traits: Record<string, string>;
+    traits: TraitValueMap;
+}
+
+export type TraitValueMap = Record<string, string[]>;
+
+export interface UserTraitsPayload {
+    id: string;
+    userId: string;
+    traits: TraitValueMap;
+    createdAt: string;
+    updatedAt: string;
 }

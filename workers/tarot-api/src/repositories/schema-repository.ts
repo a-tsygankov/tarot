@@ -8,6 +8,7 @@ import { r2GetJson, r2PutJson } from '../services/r2-adapter.js';
 const ACTIVE_KEY = 'schemas/active.json';
 const VERSIONS_PREFIX = 'schemas/versions';
 const MANIFESTS_PREFIX = 'schemas/manifests';
+const UPGRADES_PREFIX = 'schemas/upgrades';
 
 export class R2SchemaRepository {
     constructor(private r2: R2Bucket) {}
@@ -69,5 +70,13 @@ export class R2SchemaRepository {
         // Sort by key (timestamp-based IDs) descending
         const sorted = list.objects.sort((a, b) => b.key.localeCompare(a.key));
         return r2GetJson<MigrationManifest>(this.r2, sorted[0].key);
+    }
+
+    async getUpgradeState(version: string): Promise<Record<string, unknown> | null> {
+        return r2GetJson<Record<string, unknown>>(this.r2, `${UPGRADES_PREFIX}/${version}.json`);
+    }
+
+    async putUpgradeState(version: string, state: Record<string, unknown>): Promise<void> {
+        await r2PutJson(this.r2, `${UPGRADES_PREFIX}/${version}.json`, state);
     }
 }

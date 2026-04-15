@@ -1,6 +1,8 @@
+import type { UserTraitsPayload } from '../contracts/api-contracts.js';
+
 /**
- * UserContext interface — accumulated user profile.
- * Built from AI-extracted data across sessions.
+ * UserContext interface — client-owned user settings and profile fields.
+ * Trait extraction is server-owned and attached as a snapshot.
  */
 export interface IUserContext {
     uid: string;
@@ -9,7 +11,7 @@ export interface IUserContext {
     gender: string | null;
     birthdate: string | null;
     location: string | null;
-    traits: Record<string, string>;
+    userTraits: UserTraitsPayload | null;
     language: string;
     tone: string;
     theme: string;
@@ -24,6 +26,13 @@ export interface IUserContext {
 export interface DeviceInfo {
     userAgent: string;
     platform: string;
+    deviceType: 'phone' | 'tablet' | 'desktop' | 'unknown';
+    osName: string | null;
+    osVersion: string | null;
+    browserName: string | null;
+    browserVersion: string | null;
+    model: string | null;
+    summary: string;
     screenWidth: number;
     screenHeight: number;
     timezone?: string;

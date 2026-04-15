@@ -1,4 +1,4 @@
-import type { ReadingResponse, FollowUpResponse } from '@shared/contracts/api-contracts.js';
+import type { ReadingResponse, FollowUpResponse, TraitValueMap } from '@shared/contracts/api-contracts.js';
 
 /**
  * Parse AI text output into structured response objects.
@@ -22,6 +22,7 @@ export function parseReadingResponse(
         userContextDelta: parsed.userContextDelta ?? {
             name: null, gender: null, birthdate: null, location: null, traits: {},
         },
+        userTraits: null,
         provider,
         model,
     };
@@ -40,7 +41,31 @@ export function parseFollowUpResponse(raw: string): FollowUpResponse {
         questionDigest: parsed.questionDigest,
         answerDigest: parsed.answerDigest,
         userContextDelta: parsed.userContextDelta ?? null,
+        userTraits: null,
     };
+}
+
+export function parseTraitExtractionResponse(raw: string): TraitValueMap {
+    const json = extractJson(raw);
+    const parsed = JSON.parse(json) as { traits?: Record<string, unknown> };
+    if (!parsed.traits || typeof parsed.traits !== 'object') {
+        return {};
+    }
+
+    const normalized: TraitValueMap = {};
+    for (const [key, values] of Object.entries(parsed.traits)) {
+        if (!Array.isArray(values)) {
+            continue;
+        }
+        const cleanValues = values
+            .map(value => String(value).trim())
+            .filter(Boolean);
+        if (cleanValues.length > 0) {
+            normalized[key] = cleanValues;
+        }
+    }
+
+    return normalized;
 }
 
 /**

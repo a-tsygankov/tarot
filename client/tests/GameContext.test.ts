@@ -55,6 +55,7 @@ describe('GameContext', () => {
                 },
                 contextUpdate: 'Distilled summary',
                 userContextDelta: { name: null, gender: null, birthdate: null, location: null, traits: {} },
+                userTraits: null,
                 provider: 'gemini',
                 model: 'gemini-2.5-flash',
             };

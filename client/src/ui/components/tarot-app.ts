@@ -39,7 +39,7 @@ export class TarotApp extends LitElement {
 
             .screen {
                 flex: 1;
-                padding: 0 1em 4.5em; /* extra bottom padding for bottom bar */
+                padding: 0 1em calc(8rem + env(safe-area-inset-bottom, 0px));
                 animation: fadeIn 0.3s ease-out;
                 position: relative;
                 z-index: 1;
@@ -63,6 +63,7 @@ export class TarotApp extends LitElement {
                 align-items: center;
                 gap: 1.1em;
                 max-width: 340px;
+                margin-top: 1.3em;
             }
 
             .oracle-mark {
@@ -183,6 +184,18 @@ export class TarotApp extends LitElement {
                 max-width: 320px;
                 line-height: 1.65;
                 font-size: 0.98rem;
+                text-wrap: balance;
+            }
+
+            @media (max-width: 430px) {
+                .hero-lockup {
+                    margin-top: 2.1em;
+                }
+
+                .oracle-subtitle {
+                    max-width: 16.5em;
+                    line-height: 1.5;
+                }
             }
 
             .spread-choices {
@@ -553,10 +566,9 @@ export class TarotApp extends LitElement {
                         <div class="oracle-orbit"></div>
                         <div class="oracle-orbit-secondary"></div>
                     </div>
-                    <div class="oracle-kicker">Velvet Arcana</div>
                     <div class="oracle-title">Tarot Oracle</div>
                     <div class="oracle-subtitle">
-                    Ask the cards a question, or let fate guide your reading through a more ornate celestial ritual.
+                    Ask the cards a question, or let fate guide your reading.
                     </div>
                 </div>
 
@@ -643,6 +655,7 @@ export class TarotApp extends LitElement {
             if (response.userContextDelta) {
                 this._services.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this._services.userContext.applyUserTraits(response.userTraits);
             this._readingVersion += 1;
         } catch (err) {
             console.error('Re-request reading failed:', err instanceof Error ? err.message : err);

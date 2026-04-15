@@ -22,9 +22,11 @@ import {
 import { R2SchemaRepository } from './repositories/schema-repository.js';
 import { SchemaService } from './services/schema-service.js';
 import { R2UserRepository } from './repositories/user-repository.js';
+import { R2UserTraitsRepository } from './repositories/user-traits-repository.js';
 import { R2GameRepository } from './repositories/game-repository.js';
 import { R2AnalyticsRepository } from './repositories/analytics-repository.js';
 import { IndexWriter } from './services/index-writer.js';
+import { SchemaUpgradeService } from './services/schema-upgrade-service.js';
 import { checkRateLimit, rateLimitResponse } from './middleware/rate-limiter.js';
 import { WORKER_CONFIG } from './config.js';
 
@@ -50,13 +52,16 @@ export default {
         // Ensure schema is initialized (cheap no-op after first call)
         const schemaRepo = new R2SchemaRepository(env.R2);
         const schemaService = new SchemaService(schemaRepo);
+        const schemaUpgradeService = new SchemaUpgradeService(env.R2, schemaRepo);
+        await schemaUpgradeService.ensureCurrentSchema();
 
         // Compose dependencies
         const users = new R2UserRepository(env.R2);
+        const userTraits = new R2UserTraitsRepository(env.R2);
         const games = new R2GameRepository(env.R2);
         const analytics = new R2AnalyticsRepository(env.R2);
         const indexWriter = new IndexWriter(env.R2);
-        const deps = { users, games, analytics, indexWriter };
+        const deps = { users, userTraits, games, analytics, indexWriter };
 
         let response: Response;
 
