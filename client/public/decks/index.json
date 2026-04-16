@@ -3,5 +3,15 @@
     "id": "community",
     "label": "Rider-Waite",
     "description": "Classic Rider-Waite illustrated deck"
+  },
+  {
+    "id": "dark-cats",
+    "label": "Dark Cats",
+    "description": "Gothic dark cat tarot deck"
+  },
+  {
+    "id": "karina",
+    "label": "Karina Collins",
+    "description": "Karina Collins illustrated tarot deck"
   }
 ]

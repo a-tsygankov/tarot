@@ -43,6 +43,11 @@ const STORAGE_KEY = 'tarot-deck-style';
 const FETCH_TIMEOUT_MS = 30_000;
 const BASE_PATH = import.meta.env.BASE_URL ?? '/';
 
+/** Silent migration: old deck ID → new deck ID. Applied once on init. */
+const DECK_RENAMES: Record<string, string> = {
+    'cats': 'dark-cats',
+};
+
 let _currentStyleId = 'classic';
 let _catDeckModule: CardArtProvider | null = null;
 /** Lightweight index entries (id + label + description only) */
@@ -132,8 +137,12 @@ export async function initDeckStyle(): Promise<void> {
     // Fetch lightweight index (just ids + labels)
     _assetDeckIndex = await discoverAssetDecks();
 
-    // Restore saved selection
+    // Restore saved selection, applying any renames
     _currentStyleId = localStorage.getItem(STORAGE_KEY) ?? 'classic';
+    if (DECK_RENAMES[_currentStyleId]) {
+        _currentStyleId = DECK_RENAMES[_currentStyleId];
+        localStorage.setItem(STORAGE_KEY, _currentStyleId);
+    }
 
     // Validate saved style still exists
     const allStyles = getAvailableDeckStyles();
