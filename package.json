@@ -1,0 +1,23 @@
+{
+  "name": "tarot",
+  "version": "1.0.0",
+  "description": "AI-powered tarot reading app with voice, multiple card decks, and multi-language support.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/a-tsygankov/tarot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/a-tsygankov/tarot/issues"
+  },
+  "homepage": "https://github.com/a-tsygankov/tarot#readme",
+  "devDependencies": {
+    "sharp": "^0.34.5"
+  }
+}

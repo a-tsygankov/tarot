@@ -2,7 +2,7 @@ import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { sharedStyles } from '../styles/shared.js';
-import { cardBackSvg, getCardArt } from './card-art-registry.js';
+import { cardBackSvg, getCardArt, onDeckArtLoaded } from './card-art-registry.js';
 import type { IAudioCueService } from '../../services/Audio/IAudioCueService.js';
 
 type CardFace = 'back' | 'front';
@@ -168,6 +168,7 @@ export class TarotCard extends LitElement {
     @state() private previewWidth = 320;
     @state() private previewHeight = 552;
 
+    private _unsubDeckArt?: () => void;
     private longPressTimer: ReturnType<typeof setTimeout> | null = null;
     private previewReleaseTimer: ReturnType<typeof setTimeout> | null = null;
     private previewCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -315,8 +316,14 @@ export class TarotCard extends LitElement {
         this.previewHeight = Math.round(this.previewWidth / aspectRatio);
     }
 
+    override connectedCallback(): void {
+        super.connectedCallback();
+        this._unsubDeckArt = onDeckArtLoaded(() => this.requestUpdate());
+    }
+
     override disconnectedCallback(): void {
         super.disconnectedCallback();
+        this._unsubDeckArt?.();
         this.clearLongPressTimer();
         this.clearPreviewCloseTimers();
         this.teardownPreviewOverlay();

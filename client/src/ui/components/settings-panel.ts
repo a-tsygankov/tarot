@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import { THEMES, applyTheme } from '../styles/themes.js';
-import { DECK_STYLES, getCurrentDeckStyle, setDeckStyle } from './card-art-registry.js';
+import { getAvailableDeckStyles, getCurrentDeckStyle, setDeckStyle, type DeckStyleInfo } from './card-art-registry.js';
 import type { AppServices } from '../../app/composition-root.js';
 
 const FONT_OPTIONS = [
@@ -274,6 +274,7 @@ export class SettingsPanel extends LitElement {
     @state() private _speed = 1.0;
     @state() private _font = 'Palatino';
     @state() private _deckStyle = 'classic';
+    @state() private _deckStyles: DeckStyleInfo[] = [];
     @state() private _italic = true;
     @state() private _fontSize = 'medium';
 
@@ -288,6 +289,7 @@ export class SettingsPanel extends LitElement {
             this._speed = parseFloat(localStorage.getItem('tarot-tts-speed') ?? '1.0');
             this._font = localStorage.getItem('tarot-font') ?? 'Palatino';
             this._deckStyle = getCurrentDeckStyle();
+            this._deckStyles = getAvailableDeckStyles();
             this._italic = (localStorage.getItem('tarot-italic') ?? 'true') === 'true';
             this._fontSize = localStorage.getItem('tarot-font-size') ?? 'medium';
             this._noReversedCards = uc.noReversedCards;
@@ -354,7 +356,7 @@ export class SettingsPanel extends LitElement {
                 <div class="panel">
                     <div class="section-label">Card Deck</div>
                     <div class="option-grid">
-                        ${DECK_STYLES.map(d => html`
+                        ${this._deckStyles.map(d => html`
                             <button
                                 class="option-btn ${this._deckStyle === d.id ? 'selected' : ''}"
                                 @click=${() => this._setDeckStyle(d.id)}
