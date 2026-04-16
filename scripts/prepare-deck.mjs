@@ -215,13 +215,11 @@ async function main() {
         const origContent = readFileSync(srcFile, 'utf8');
         totalOrigSize += origContent.length;
 
-        const outFilename = toFilename(cardName);
         const resized = await resizeSvgWithSharp(origContent, scale);
         totalNewSize += resized.length;
 
-        writeFileSync(join(outDir, outFilename), resized);
-        cards[cardName] = outFilename;
-        console.log(`  ${fileNum}.svg → ${outFilename}`);
+        cards[cardName] = resized;
+        console.log(`  ${fileNum}.svg → ${cardName}`);
     }
 
     // ── Process Minor Arcana ──
@@ -243,43 +241,39 @@ async function main() {
             totalOrigSize += origContent.length;
 
             const cardName = `${rank} of ${suitName}`;
-            const outFilename = toFilename(cardName);
             const resized = await resizeSvgWithSharp(origContent, scale);
             totalNewSize += resized.length;
 
-            writeFileSync(join(outDir, outFilename), resized);
-            cards[cardName] = outFilename;
-            console.log(`  ${fileKey}.svg → ${outFilename}`);
+            cards[cardName] = resized;
+            console.log(`  ${fileKey}.svg → ${cardName}`);
         }
     }
 
     // ── Card Back ──
-    let cardBackFile = null;
+    let cardBackSvg = null;
     if (backPath && existsSync(backPath)) {
         const backContent = readFileSync(backPath, 'utf8');
-        const resizedBack = await resizeSvgWithSharp(backContent, scale);
-        writeFileSync(join(outDir, 'back.svg'), resizedBack);
-        cardBackFile = 'back.svg';
-        console.log(`\nCard back: ${backPath} → back.svg`);
+        cardBackSvg = await resizeSvgWithSharp(backContent, scale);
+        console.log(`\nCard back: ${backPath}`);
     }
 
-    // ── Generate deck.json manifest ──
+    // ── Write single deck.json with all SVGs inline ──
     const manifest = {
         id: deckId,
         label,
         description,
-        ...(cardBackFile ? { cardBack: cardBackFile } : {}),
+        ...(cardBackSvg ? { cardBack: cardBackSvg } : {}),
         cards,
     };
 
-    writeFileSync(join(outDir, 'deck.json'), JSON.stringify(manifest, null, 2));
+    writeFileSync(join(outDir, 'deck.json'), JSON.stringify(manifest));
 
     const cardCount = Object.keys(cards).length;
     const origMB = (totalOrigSize / 1024 / 1024).toFixed(1);
     const newMB = (totalNewSize / 1024 / 1024).toFixed(1);
-    console.log(`\nDone! ${cardCount} cards processed.`);
+    const fileMB = (Buffer.byteLength(JSON.stringify(manifest)) / 1024 / 1024).toFixed(1);
+    console.log(`\nDone! ${cardCount} cards → single deck.json (${fileMB} MB)`);
     console.log(`  Original: ${origMB} MB → Resized: ${newMB} MB`);
-    console.log(`  Manifest: ${join(outDir, 'deck.json')}`);
 }
 
 main().catch(err => {

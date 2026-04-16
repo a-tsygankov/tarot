@@ -4,7 +4,11 @@
  *
  * Supports two kinds of decks:
  *   1. Built-in (code-generated SVGs) — classic, cats
- *   2. Asset decks (SVG files in public/decks/<id>/) — auto-discovered at build time
+ *   2. Asset decks — single deck.json with all SVGs inline, auto-discovered
+ *
+ * Asset decks are lazy-loaded: only index.json (lightweight) is fetched at
+ * startup. The full deck.json (~MB) is fetched and cached when the user
+ * selects a deck.
  */
 
 import * as classicDeck from './card-art.js';
@@ -36,103 +40,27 @@ const BUILTIN_DECKS: DeckStyleInfo[] = [
 ];
 
 const STORAGE_KEY = 'tarot-deck-style';
-const FETCH_TIMEOUT_MS = 10_000;
+const FETCH_TIMEOUT_MS = 30_000;
 const BASE_PATH = import.meta.env.BASE_URL ?? '/';
 
 let _currentStyleId = 'classic';
 let _catDeckModule: CardArtProvider | null = null;
-let _assetDecks: AssetDeckManifest[] = [];
+/** Lightweight index entries (id + label + description only) */
+let _assetDeckIndex: DeckStyleInfo[] = [];
+/** Fully loaded asset deck providers (cached after first load) */
 let _assetProviders = new Map<string, AssetDeckProvider>();
 
-// ── Change listeners — components call onDeckArtLoaded() to re-render ──
-
-type DeckArtListener = () => void;
-const _listeners = new Set<DeckArtListener>();
-
-/** Register a callback that fires when new asset-deck SVGs finish loading. */
-export function onDeckArtLoaded(fn: DeckArtListener): () => void {
-    _listeners.add(fn);
-    return () => _listeners.delete(fn);
-}
-
-function _notifyListeners(): void {
-    for (const fn of _listeners) fn();
-}
-
-// ── Asset deck provider: loads SVGs from public/decks/<id>/ ──
+// ── Asset deck provider: all SVGs loaded inline from deck.json ──
 
 class AssetDeckProvider implements CardArtProvider {
-    private _cache = new Map<string, string>();
-    private _loading = new Map<string, Promise<string | null>>();
-
-    constructor(
-        private _manifest: AssetDeckManifest,
-        private _basePath: string,
-    ) {}
-
-    private _url(filename: string): string {
-        return `${this._basePath}decks/${this._manifest.id}/${filename}`;
-    }
-
-    private async _fetchSvg(filename: string): Promise<string | null> {
-        const cached = this._cache.get(filename);
-        if (cached) return cached;
-
-        const existing = this._loading.get(filename);
-        if (existing) return existing;
-
-        const promise = fetch(this._url(filename), {
-            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        })
-            .then(r => r.ok ? r.text() : null)
-            .then(svg => {
-                if (svg) {
-                    this._cache.set(filename, svg);
-                    _notifyListeners();
-                }
-                this._loading.delete(filename);
-                return svg;
-            })
-            .catch(() => {
-                this._loading.delete(filename);
-                return null;
-            });
-
-        this._loading.set(filename, promise);
-        return promise;
-    }
+    constructor(private _manifest: AssetDeckManifest) {}
 
     cardBackSvg(w: number, h: number): string {
-        if (this._manifest.cardBack) {
-            const cached = this._cache.get(this._manifest.cardBack);
-            if (cached) return cached;
-            void this._fetchSvg(this._manifest.cardBack);
-        }
-        return classicDeck.cardBackSvg(w, h);
+        return this._manifest.cardBack ?? classicDeck.cardBackSvg(w, h);
     }
 
-    getCardArt(cardName: string, w: number, h: number): string | null {
-        const filename = this._manifest.cards[cardName];
-        if (!filename) return classicDeck.getCardArt(cardName, w, h);
-
-        const cached = this._cache.get(filename);
-        if (cached) return cached;
-
-        void this._fetchSvg(filename);
-        return classicDeck.getCardArt(cardName, w, h);
-    }
-
-    /** Preload card SVGs in batches to avoid connection pool saturation */
-    async preload(): Promise<void> {
-        const files = Object.values(this._manifest.cards);
-        if (this._manifest.cardBack) files.push(this._manifest.cardBack);
-
-        // Batch in groups of 4 to stay within browser connection limits
-        const BATCH_SIZE = 4;
-        for (let i = 0; i < files.length; i += BATCH_SIZE) {
-            const batch = files.slice(i, i + BATCH_SIZE);
-            await Promise.all(batch.map(f => this._fetchSvg(f)));
-        }
+    getCardArt(cardName: string, _w: number, _h: number): string | null {
+        return this._manifest.cards[cardName] ?? null;
     }
 }
 
@@ -150,30 +78,35 @@ async function loadCatDeck(): Promise<CardArtProvider | null> {
     return _catDeckModule;
 }
 
-// ── Discovery: fetch asset deck index, then each deck's full manifest ──
+// ── Lazy-load an asset deck's full manifest ──
 
-async function discoverAssetDecks(): Promise<AssetDeckManifest[]> {
+async function loadAssetDeck(deckId: string): Promise<AssetDeckProvider | null> {
+    const cached = _assetProviders.get(deckId);
+    if (cached) return cached;
+
+    try {
+        const r = await fetch(`${BASE_PATH}decks/${deckId}/deck.json`, {
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!r.ok) return null;
+        const manifest = await r.json() as AssetDeckManifest;
+        const provider = new AssetDeckProvider(manifest);
+        _assetProviders.set(deckId, provider);
+        return provider;
+    } catch {
+        return null;
+    }
+}
+
+// ── Discovery: fetch only the lightweight index ──
+
+async function discoverAssetDecks(): Promise<DeckStyleInfo[]> {
     try {
         const res = await fetch(`${BASE_PATH}decks/index.json`, {
             signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
         if (!res.ok) return [];
-        const index: { id: string; label: string; description: string }[] = await res.json();
-
-        // Fetch full manifests (with card mappings) for each discovered deck
-        const manifests = await Promise.all(index.map(async (entry) => {
-            try {
-                const r = await fetch(`${BASE_PATH}decks/${entry.id}/deck.json`, {
-                    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-                });
-                if (!r.ok) return null;
-                return await r.json() as AssetDeckManifest;
-            } catch {
-                return null;
-            }
-        }));
-
-        return manifests.filter((m): m is AssetDeckManifest => m !== null);
+        return await res.json();
     } catch {
         return [];
     }
@@ -183,16 +116,8 @@ async function discoverAssetDecks(): Promise<AssetDeckManifest[]> {
 
 /** Get all available deck styles (built-in + discovered asset decks) */
 export function getAvailableDeckStyles(): DeckStyleInfo[] {
-    const assetStyles = _assetDecks.map(d => ({
-        id: d.id,
-        label: d.label,
-        description: d.description,
-    }));
-    return [...BUILTIN_DECKS, ...assetStyles];
+    return [...BUILTIN_DECKS, ..._assetDeckIndex];
 }
-
-/** For backward compat — same as getAvailableDeckStyles() */
-export const DECK_STYLES = BUILTIN_DECKS;
 
 /** Get the provider for a given style (sync — returns cached or fallback) */
 function getProviderSync(styleId: string): CardArtProvider {
@@ -202,15 +127,10 @@ function getProviderSync(styleId: string): CardArtProvider {
     return classicDeck;
 }
 
-/** Initialize: discover decks, restore saved style, preload if needed */
+/** Initialize: discover deck list, restore saved style, load active deck */
 export async function initDeckStyle(): Promise<void> {
-    // Discover asset decks
-    _assetDecks = await discoverAssetDecks();
-
-    // Create providers for all discovered decks
-    for (const manifest of _assetDecks) {
-        _assetProviders.set(manifest.id, new AssetDeckProvider(manifest, BASE_PATH));
-    }
+    // Fetch lightweight index (just ids + labels)
+    _assetDeckIndex = await discoverAssetDecks();
 
     // Restore saved selection
     _currentStyleId = localStorage.getItem(STORAGE_KEY) ?? 'classic';
@@ -221,13 +141,11 @@ export async function initDeckStyle(): Promise<void> {
         _currentStyleId = 'classic';
     }
 
-    // Preload the active deck (non-blocking for asset decks —
-    // they fall back to classic until SVGs arrive, then notify listeners)
+    // Load the active deck
     if (_currentStyleId === 'cats') {
         await loadCatDeck();
-    } else {
-        const assetProvider = _assetProviders.get(_currentStyleId);
-        if (assetProvider) void assetProvider.preload();
+    } else if (_assetDeckIndex.some(d => d.id === _currentStyleId)) {
+        await loadAssetDeck(_currentStyleId);
     }
 }
 
@@ -236,16 +154,15 @@ export function getCurrentDeckStyle(): string {
     return _currentStyleId;
 }
 
-/** Switch deck style and persist. Starts preloading asset decks in background. */
+/** Switch deck style, persist, and load the deck if needed */
 export async function setDeckStyle(styleId: string): Promise<void> {
     _currentStyleId = styleId;
     localStorage.setItem(STORAGE_KEY, styleId);
 
     if (styleId === 'cats') {
         await loadCatDeck();
-    } else {
-        const assetProvider = _assetProviders.get(styleId);
-        if (assetProvider) void assetProvider.preload();
+    } else if (_assetDeckIndex.some(d => d.id === styleId)) {
+        await loadAssetDeck(styleId);
     }
 }
 
