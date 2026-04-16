@@ -1,5 +1,10 @@
 [
   {
+    "id": "ambre",
+    "label": "Ambre",
+    "description": "Tarot Ambre — amber-toned mystical deck"
+  },
+  {
     "id": "community",
     "label": "Rider-Waite",
     "description": "Classic Rider-Waite illustrated deck"
@@ -10,8 +15,23 @@
     "description": "Gothic dark cat tarot deck"
   },
   {
+    "id": "decamerone",
+    "label": "Decamerone",
+    "description": "Tarocchi del Decamerone — Italian Renaissance deck"
+  },
+  {
     "id": "karina",
     "label": "Karina Collins",
     "description": "Karina Collins illustrated tarot deck"
+  },
+  {
+    "id": "mermaids",
+    "label": "Mermaids",
+    "description": "Tarot of the Mermaids — oceanic fantasy deck"
+  },
+  {
+    "id": "white-cats",
+    "label": "White Cats",
+    "description": "White Cats Tarot — gentle feline deck"
   }
 ]

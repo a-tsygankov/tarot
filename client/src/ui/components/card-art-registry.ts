@@ -40,12 +40,19 @@ const BUILTIN_DECKS: DeckStyleInfo[] = [
 ];
 
 const STORAGE_KEY = 'tarot-deck-style';
+const MIGRATION_KEY = 'tarot-deck-migration-v1';
 const FETCH_TIMEOUT_MS = 30_000;
 const BASE_PATH = import.meta.env.BASE_URL ?? '/';
 
-/** Silent migration: old deck ID → new deck ID. Applied once on init. */
+/**
+ * One-time silent migration: old deck ID → new deck ID.
+ * Applied ONCE per browser (tracked via MIGRATION_KEY flag).
+ * After migration runs, users can freely select any deck — including the
+ * original built-ins — and their choice persists without being overridden.
+ */
 const DECK_RENAMES: Record<string, string> = {
-    'cats': 'dark-cats',
+    'classic': 'community',   // Classic → Rider-Waite
+    'cats':    'dark-cats',   // Cat Tarot → Dark Cats
 };
 
 let _currentStyleId = 'classic';
@@ -119,9 +126,9 @@ async function discoverAssetDecks(): Promise<DeckStyleInfo[]> {
 
 // ── Public API ──
 
-/** Get all available deck styles (built-in + discovered asset decks) */
+/** Get all available deck styles (asset decks first, built-in at the end) */
 export function getAvailableDeckStyles(): DeckStyleInfo[] {
-    return [...BUILTIN_DECKS, ..._assetDeckIndex];
+    return [..._assetDeckIndex, ...BUILTIN_DECKS];
 }
 
 /** Get the provider for a given style (sync — returns cached or fallback) */
@@ -137,12 +144,23 @@ export async function initDeckStyle(): Promise<void> {
     // Fetch lightweight index (just ids + labels)
     _assetDeckIndex = await discoverAssetDecks();
 
-    // Restore saved selection, applying any renames
-    _currentStyleId = localStorage.getItem(STORAGE_KEY) ?? 'classic';
-    if (DECK_RENAMES[_currentStyleId]) {
-        _currentStyleId = DECK_RENAMES[_currentStyleId];
+    // Restore saved selection, applying one-time default/migration if not done
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const migrationDone = localStorage.getItem(MIGRATION_KEY) === '1';
+
+    if (saved === null) {
+        // New user — default to Rider-Waite
+        _currentStyleId = 'community';
         localStorage.setItem(STORAGE_KEY, _currentStyleId);
+    } else if (!migrationDone && DECK_RENAMES[saved]) {
+        // Existing user with legacy built-in deck — migrate once
+        _currentStyleId = DECK_RENAMES[saved];
+        localStorage.setItem(STORAGE_KEY, _currentStyleId);
+    } else {
+        _currentStyleId = saved;
     }
+    // Mark migration as done so future selections of any deck are respected
+    localStorage.setItem(MIGRATION_KEY, '1');
 
     // Validate saved style still exists
     const allStyles = getAvailableDeckStyles();
