@@ -2,6 +2,8 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
+import './dictation-input.js';
+import type { DictationInput } from './dictation-input.js';
 
 interface ChatMessage {
     role: 'user' | 'oracle';
@@ -20,7 +22,16 @@ export class FollowupChat extends LitElement {
             :host {
                 display: flex;
                 flex-direction: column;
-                height: calc(100dvh - 60px);
+                /* Reserve room for top safe area (Dynamic Island / notch),
+                   bottom bar (~60px) and bottom safe area (home indicator).
+                   The parent .screen already applies its own horizontal and
+                   bottom safe-area padding, so we only need to size the host. */
+                height: calc(
+                    100dvh
+                    - 60px
+                    - env(safe-area-inset-top, 0px)
+                    - env(safe-area-inset-bottom, 0px)
+                );
             }
 
             .chat-header {
@@ -44,16 +55,20 @@ export class FollowupChat extends LitElement {
                 padding: 0.8em 1em;
                 border-radius: 12px;
                 line-height: 1.5;
+                font-family: var(--font-reading, 'Palatino Linotype', Palatino, Georgia, serif);
+                font-style: var(--font-reading-style, italic);
                 font-size: var(--font-reading-size, 0.92em);
                 animation: fadeIn 0.3s ease-out;
             }
 
+            /* Seeker's own messages: normal style so the user can read their question cleanly. */
             .message.user {
                 align-self: flex-end;
                 background: var(--purple-dim);
                 border: 1px solid var(--purple);
                 color: var(--text);
                 border-bottom-right-radius: 4px;
+                font-style: normal;
             }
 
             .message.oracle {
@@ -100,77 +115,8 @@ export class FollowupChat extends LitElement {
             }
 
             .input-bar {
-                display: flex;
-                gap: 0.5em;
                 padding: 0.6em 0;
                 border-top: 1px solid var(--border);
-            }
-
-            .chat-input {
-                flex: 1;
-                padding: 0.7em 1em;
-                background: var(--bg-card);
-                border: 1px solid var(--border);
-                border-radius: 20px;
-                color: var(--text);
-                font-family: var(--font-body);
-                font-size: 0.92em;
-                outline: none;
-            }
-
-            .chat-input:focus {
-                border-color: var(--gold-dim);
-            }
-
-            .chat-input::placeholder {
-                color: var(--text-faint);
-            }
-
-            .send-btn {
-                width: 44px;
-                height: 44px;
-                border-radius: 50%;
-                border: none;
-                background: var(--gold-dim);
-                color: var(--bg-deep);
-                font-size: 1.1em;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: background 0.2s;
-            }
-
-            .send-btn:hover:not(:disabled) {
-                background: var(--gold);
-            }
-
-            .send-btn:disabled {
-                opacity: 0.4;
-                cursor: not-allowed;
-            }
-
-            .mic-btn {
-                width: 44px;
-                height: 44px;
-                border-radius: 50%;
-                border: 1px solid var(--border);
-                background: transparent;
-                color: var(--text-dim);
-                font-size: 1.1em;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-
-            .mic-btn.listening {
-                border-color: var(--accent);
-                color: var(--accent);
-                animation: pulse 1.5s infinite;
-            }
-
-            @keyframes pulse {
-                0%, 100% { box-shadow: 0 0 0 0 rgba(200,96,122,0.4); }
-                50% { box-shadow: 0 0 0 8px rgba(200,96,122,0); }
             }
 
             .turn-limit {
@@ -187,14 +133,20 @@ export class FollowupChat extends LitElement {
     @state() private _messages: ChatMessage[] = [];
     @state() private _input = '';
     @state() private _loading = false;
-    @state() private _listening = false;
 
     @query('.messages') private _messagesEl!: HTMLElement;
+    @query('dictation-input') private _dictationEl?: DictationInput;
 
     private get _canAsk(): boolean {
         const game = this.services?.gameContext;
         if (!game) return false;
         return game.turnCount < (this.services.config.maxFollowUpsPerGame + 1);
+    }
+
+    private get _sttLang(): string {
+        return this.services.config.languages.find(
+            l => l.code === this.services.userContext.language,
+        )?.sttLang ?? 'en-US';
     }
 
     override render() {
@@ -225,32 +177,16 @@ export class FollowupChat extends LitElement {
 
             ${this._canAsk ? html`
                 <div class="input-bar">
-                    ${this.services?.sttService?.isAvailable() ? html`
-                        <button
-                            class="mic-btn ${this._listening ? 'listening' : ''}"
-                            @click=${this._toggleMic}
-                        >🎤</button>
-                    ` : nothing}
-
-                    <input
-                        class="chat-input"
-                        type="text"
-                        placeholder="Ask the Oracle..."
+                    <dictation-input
+                        .sttService=${this.services?.sttService}
+                        .sttLang=${this._sttLang}
                         .value=${this._input}
-                        @input=${(e: InputEvent) => {
-                            this._input = (e.target as HTMLInputElement).value;
-                        }}
-                        @keydown=${(e: KeyboardEvent) => {
-                            if (e.key === 'Enter' && !e.shiftKey) this._send();
-                        }}
+                        .placeholder=${'Ask the Oracle...'}
                         ?disabled=${this._loading}
-                    />
-
-                    <button
-                        class="send-btn"
-                        @click=${this._send}
-                        ?disabled=${!this._input.trim() || this._loading}
-                    >➤</button>
+                        show-send
+                        @input-change=${(e: CustomEvent) => { this._input = e.detail.value; }}
+                        @submit=${(e: CustomEvent) => this._send(e.detail.value)}
+                    ></dictation-input>
                 </div>
             ` : html`
                 <div class="turn-limit">
@@ -260,15 +196,12 @@ export class FollowupChat extends LitElement {
         `;
     }
 
-    private async _send(): Promise<void> {
-        const text = this._input.trim();
+    private async _send(rawText: string): Promise<void> {
+        const text = rawText.trim();
         if (!text || this._loading) return;
 
-        // Stop microphone if still active
-        if (this._listening) {
-            this.services.sttService.stop();
-            this._listening = false;
-        }
+        // Mic is already stopped by dictation-input on submit; call again defensively.
+        this._dictationEl?.stopDictation();
 
         this._input = '';
         this._messages = [...this._messages, {
@@ -287,7 +220,6 @@ export class FollowupChat extends LitElement {
                 text,
             );
 
-            // Store digests in game context (not full text)
             this.services.gameContext.addQA(
                 response.questionDigest,
                 response.answerDigest,
@@ -324,46 +256,12 @@ export class FollowupChat extends LitElement {
         });
     }
 
-    private _toggleMic(): void {
-        const stt = this.services.sttService;
-
-        if (this._listening) {
-            stt.stop();
-            this._listening = false;
-            return;
-        }
-
-        this._listening = true;
-        const lang = this.services.config.languages.find(
-            l => l.code === this.services.userContext.language,
-        )?.sttLang ?? 'en-US';
-
-        stt.start(lang, {
-            onStart: () => {
-                this._listening = true;
-            },
-            onResult: (text: string) => {
-                this._input = text;
-                this._listening = false;
-                stt.stop(); // ensure mic is released
-            },
-            onError: (err: string) => {
-                console.warn('STT error:', err);
-                this._listening = false;
-                stt.stop();
-            },
-            onEnd: () => {
-                this._listening = false;
-            },
-        });
-    }
-
     override disconnectedCallback(): void {
         super.disconnectedCallback();
-        if (this._listening) {
-            this.services?.sttService?.stop();
-            this._listening = false;
-        }
+        // Belt-and-suspenders: dictation-input has its own disconnect handler,
+        // but call through the service directly too in case the child was
+        // removed before us.
+        this.services?.sttService?.stop();
     }
 
     private _goBack(): void {

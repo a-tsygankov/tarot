@@ -63,6 +63,8 @@ export class ReadingDisplay extends LitElement {
             .card-reading-text {
                 color: var(--text);
                 line-height: 1.6;
+                font-family: var(--font-reading, 'Palatino Linotype', Palatino, Georgia, serif);
+                font-style: var(--font-reading-style, italic);
                 font-size: var(--font-reading-size, 0.92em);
             }
 
@@ -99,6 +101,8 @@ export class ReadingDisplay extends LitElement {
 
             .overall-text {
                 line-height: 1.7;
+                font-family: var(--font-reading, 'Palatino Linotype', Palatino, Georgia, serif);
+                font-style: var(--font-reading-style, italic);
                 font-size: var(--font-reading-size, 0.95em);
             }
 

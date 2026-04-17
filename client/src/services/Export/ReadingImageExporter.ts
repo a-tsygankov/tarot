@@ -53,6 +53,42 @@ const CARD_STAGE_PADDING = 28;
 const CARD_STAGE_LABEL_HEIGHT = 64;
 
 export class ReadingImageExporter {
+    /**
+     * Resolve the user's reading-body font + italic preference from the same
+     * CSS variables that drive on-screen rendering. Falls back to Georgia / italic
+     * when the vars aren't set (pre-boot, or unexpected states).
+     */
+    private _resolveReadingFont(): { family: string; italic: boolean } {
+        if (typeof document === 'undefined' || !document.documentElement) {
+            return { family: 'Georgia, serif', italic: true };
+        }
+        const root = getComputedStyle(document.documentElement);
+        const family = root.getPropertyValue('--font-reading').trim()
+            || "'Palatino Linotype', Palatino, Georgia, serif";
+        const italic = root.getPropertyValue('--font-reading-style').trim() === 'italic';
+        return { family, italic };
+    }
+
+    /** Build a canvas font string that respects the user's italic + family choice. */
+    private _bodyFont(weight: number, sizePx: number, pref = this._resolveReadingFont()): string {
+        const style = pref.italic ? 'italic ' : '';
+        return `${style}${weight} ${sizePx}px ${pref.family}`;
+    }
+
+    /**
+     * Ensure the user's chosen font is loaded before we paint to canvas.
+     * Canvas text falls back to the browser default if the font isn't resident yet.
+     */
+    private async _ensureFontLoaded(font: string): Promise<void> {
+        if (typeof document === 'undefined' || !document.fonts) return;
+        try {
+            await document.fonts.load(font);
+            await document.fonts.ready;
+        } catch {
+            // If font loading fails the canvas will fall back — no throw.
+        }
+    }
+
     planLayout(input: ReadingExportInput, appUrl = this.resolveAppUrl()): ReadingImageLayoutPlan {
         const measureCanvas = document.createElement('canvas');
         const measureContext = measureCanvas.getContext('2d');
@@ -93,6 +129,11 @@ export class ReadingImageExporter {
             return null;
         }
 
+        // Resolve the user's reading font once — threaded through all body-text painting.
+        const readingFont = this._resolveReadingFont();
+        const bodyFont = this._bodyFont(400, 33, readingFont);
+        await this._ensureFontLoaded(bodyFont);
+
         this.paintBackground(context);
         this.paintFrame(context);
         this.paintHeader(context, input.title, input.subtitle);
@@ -108,6 +149,8 @@ export class ReadingImageExporter {
             context,
             input.overallReading,
             textColumnWidth,
+            999,
+            bodyFont,
         );
         const besideLineHeight = 44;
         const besideCapacity = Math.max(
@@ -118,7 +161,7 @@ export class ReadingImageExporter {
         const remainingText = besideLines.slice(besideCapacity).join(' ');
 
         await this.paintCardBlock(context, input.cards.slice(0, MAX_VISIBLE_CARDS), cardBlock, plan.cardStage);
-        this.paintReadingLines(context, initialLines, textStartX, textTop, besideLineHeight, textColumnWidth, true);
+        this.paintReadingLines(context, initialLines, textStartX, textTop, besideLineHeight, textColumnWidth, true, bodyFont);
 
         const remainingTop = Math.max(
             cardBlock.y + cardBlock.height + 42,
@@ -131,7 +174,7 @@ export class ReadingImageExporter {
 
         const remainingAreaHeight = Math.max(0, spreadY - remainingTop - 28);
         const fullWidthLines = remainingText
-            ? this.wrapText(context, remainingText, CONTENT_WIDTH)
+            ? this.wrapText(context, remainingText, CONTENT_WIDTH, 999, bodyFont)
             : [];
         let fullWidthLineHeight = 38;
         const fullWidthCapacity = Math.max(0, Math.floor(remainingAreaHeight / fullWidthLineHeight));
@@ -157,7 +200,7 @@ export class ReadingImageExporter {
 
         const adjustedSpreadY = Math.max(spreadTop, SAFE_BOTTOM - WATERMARK_HEIGHT - spreadHeight);
 
-        this.paintReadingLines(context, bodyLines, SAFE_LEFT, remainingTop, fullWidthLineHeight, CONTENT_WIDTH, true);
+        this.paintReadingLines(context, bodyLines, SAFE_LEFT, remainingTop, fullWidthLineHeight, CONTENT_WIDTH, true, bodyFont);
         this.paintSpreadSection(context, adjustedSpreadY, spreadSummaryLines, spreadLineHeight);
         this.paintWatermark(context, plan.watermarkUrl);
 
@@ -255,9 +298,10 @@ export class ReadingImageExporter {
         lineHeight: number,
         maxWidth: number,
         justify = false,
+        font = this._bodyFont(400, 33),
     ): void {
         context.fillStyle = '#f3ead7';
-        context.font = '400 33px Georgia, serif';
+        context.font = font;
         lines.forEach((line, index) => {
             const isLastLine = index === lines.length - 1;
             if (justify && !isLastLine) {

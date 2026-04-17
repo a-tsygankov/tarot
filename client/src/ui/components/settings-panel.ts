@@ -5,20 +5,7 @@ import { THEMES, applyTheme } from '../styles/themes.js';
 import { getAvailableDeckStyles, getCurrentDeckStyle, setDeckStyle, type DeckStyleInfo } from './card-art-registry.js';
 import type { AppServices } from '../../app/composition-root.js';
 
-const FONT_OPTIONS = [
-    { id: 'Palatino', label: 'Palatino', family: "'Palatino Linotype', Palatino, Georgia, serif" },
-    { id: 'Garamond', label: 'Garamond', family: "'EB Garamond', Garamond, serif" },
-    { id: 'Cinzel', label: 'Cinzel', family: "Cinzel, serif" },
-    { id: 'Helvetica', label: 'Helvetica', family: "Helvetica, 'Helvetica Neue', Arial, sans-serif" },
-    { id: 'Philosopher', label: 'Philosopher', family: "Philosopher, serif" },
-] as const;
-
-const FONT_SIZE_OPTIONS = [
-    { id: 'small', label: 'S', value: '0.85em' },
-    { id: 'medium', label: 'M', value: '1em' },
-    { id: 'large', label: 'L', value: '1.15em' },
-    { id: 'xlarge', label: 'XL', value: '1.3em' },
-] as const;
+import { FONT_OPTIONS, FONT_SIZE_OPTIONS, resolveFontFamily, resolveFontSize } from '../styles/fonts.js';
 
 const SPEED_STEPS = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
 
@@ -589,11 +576,7 @@ export class SettingsPanel extends LitElement {
     private _setFont(fontId: string): void {
         this._font = fontId;
         localStorage.setItem('tarot-font', fontId);
-        // Apply font to body for reading text
-        const font = FONT_OPTIONS.find(f => f.id === fontId);
-        if (font) {
-            document.documentElement.style.setProperty('--font-reading', font.family);
-        }
+        document.documentElement.style.setProperty('--font-reading', resolveFontFamily(fontId));
     }
 
     private _setItalic(italic: boolean): void {
@@ -605,8 +588,7 @@ export class SettingsPanel extends LitElement {
     private _setFontSize(sizeId: string): void {
         this._fontSize = sizeId;
         localStorage.setItem('tarot-font-size', sizeId);
-        const value = FONT_SIZE_OPTIONS.find(s => s.id === sizeId)?.value ?? '1em';
-        document.documentElement.style.setProperty('--font-reading-size', value);
+        document.documentElement.style.setProperty('--font-reading-size', resolveFontSize(sizeId));
     }
 
     private async _setDeckStyle(styleId: string): Promise<void> {
