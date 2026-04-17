@@ -296,6 +296,7 @@ export class FollowupChat extends LitElement {
             if (response.userContextDelta) {
                 this.services.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this.services.userContext.applyUserTraits(response.userTraits);
 
             this._messages = [...this._messages, {
                 role: 'oracle',
@@ -338,6 +339,9 @@ export class FollowupChat extends LitElement {
         )?.sttLang ?? 'en-US';
 
         stt.start(lang, {
+            onStart: () => {
+                this._listening = true;
+            },
             onResult: (text: string) => {
                 this._input = text;
                 this._listening = false;

@@ -2,6 +2,7 @@ import type { ITtsService, SpeakOptions } from './ITtsService.js';
 import type { IProgressReporter } from '../IProgressReporter.js';
 import type { IApiService } from '../IApiService.js';
 import type { AppConfig } from '../../app/config.js';
+import { recordTtsDiagnostics } from './tts-diagnostics.js';
 
 /**
  * ElevenLabs TTS via Worker proxy.
@@ -27,16 +28,48 @@ export class ElevenLabsTtsService implements ITtsService {
         options: SpeakOptions = {},
         progress?: IProgressReporter,
     ): Promise<void> {
+        recordTtsDiagnostics({
+            provider: 'elevenlabs',
+            phase: 'start',
+            timestamp: new Date().toISOString(),
+            details: {
+                language: lang,
+                textLength: text.length,
+                voiceId: options.voiceId ?? null,
+                speed: options.speed ?? this.config.tts.defaultSpeed,
+            },
+        });
         progress?.report('Generating voice...', 10);
 
-        const blob = await this.apiService.fetchTtsAsync(
-            text,
-            lang,
-            options.voiceId ?? null,
-            { progress },
-        );
+        let blob: Blob;
+        try {
+            blob = await this.apiService.fetchTtsAsync(
+                text,
+                lang,
+                options.voiceId ?? null,
+                { progress },
+            );
+        } catch (error) {
+            recordTtsDiagnostics({
+                provider: 'elevenlabs',
+                phase: 'error',
+                timestamp: new Date().toISOString(),
+                details: this.errorDetails(error, lang, options.voiceId ?? null),
+            });
+            throw error;
+        }
 
         progress?.report('Playing audio...', 70);
+        recordTtsDiagnostics({
+            provider: 'elevenlabs',
+            phase: 'playback',
+            timestamp: new Date().toISOString(),
+            details: {
+                blobSize: blob.size,
+                language: lang,
+                voiceId: options.voiceId ?? null,
+            },
+        });
 
         this.audio = new Audio(URL.createObjectURL(blob));
         this.audio.playbackRate = options.speed ?? this.config.tts.defaultSpeed;
@@ -45,11 +78,29 @@ export class ElevenLabsTtsService implements ITtsService {
             if (!this.audio) return reject(new Error('Audio not initialized'));
 
             this.audio.onended = () => {
+                recordTtsDiagnostics({
+                    provider: 'elevenlabs',
+                    phase: 'success',
+                    timestamp: new Date().toISOString(),
+                    details: {
+                        language: lang,
+                        voiceId: options.voiceId ?? null,
+                    },
+                });
                 progress?.report('Done', 100);
                 options.onEnd?.();
                 resolve();
             };
-            this.audio.onerror = () => reject(new Error('Audio playback error'));
+            this.audio.onerror = () => {
+                const error = new Error('Audio playback error');
+                recordTtsDiagnostics({
+                    provider: 'elevenlabs',
+                    phase: 'error',
+                    timestamp: new Date().toISOString(),
+                    details: this.errorDetails(error, lang, options.voiceId ?? null),
+                });
+                reject(error);
+            };
 
             options.onStart?.();
             this.audio.play().catch(reject);
@@ -69,5 +120,26 @@ export class ElevenLabsTtsService implements ITtsService {
 
     resume(): void {
         this.audio?.play();
+    }
+
+    private errorDetails(error: unknown, lang: string, voiceId: string | null): Record<string, unknown> {
+        if (error && typeof error === 'object') {
+            const anyError = error as Record<string, unknown>;
+            return {
+                language: lang,
+                voiceId,
+                name: anyError.name ?? 'Error',
+                message: anyError.message ?? String(error),
+                code: anyError.code ?? null,
+                status: anyError.status ?? null,
+                details: anyError.details ?? null,
+            };
+        }
+
+        return {
+            language: lang,
+            voiceId,
+            message: String(error),
+        };
     }
 }

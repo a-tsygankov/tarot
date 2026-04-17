@@ -3,17 +3,23 @@ import type { ReadingRequest } from '@shared/contracts/api-contracts.js';
 import { callAI } from '../services/ai-router.js';
 import { buildReadingPrompt } from '../prompts.js';
 import { parseReadingResponse } from '../services/response-parser.js';
+import { formatPromptField, formatTraitSummary, sanitizeTraitMap, sanitizeUserText } from '../services/prompt-safety.js';
 import type { R2GameRepository } from '../repositories/game-repository.js';
 import type { R2UserRepository } from '../repositories/user-repository.js';
+import type { R2UserTraitsRepository } from '../repositories/user-traits-repository.js';
 import type { R2AnalyticsRepository } from '../repositories/analytics-repository.js';
 import type { IndexWriter } from '../services/index-writer.js';
+import { extractTraitsFromUserInput } from '../services/trait-extraction.js';
 
 export interface ReadingDeps {
     games: R2GameRepository;
     users: R2UserRepository;
+    userTraits: R2UserTraitsRepository;
     analytics: R2AnalyticsRepository;
     indexWriter: IndexWriter;
 }
+
+const PREDEFINED_TOPICS = new Set(['Love', 'Career', 'Health', 'Spirit', 'Finance', 'Change']);
 
 /**
  * POST /api/reading — AI reading with 3-part distillation.
@@ -24,14 +30,24 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
     try {
         const body = await request.json() as ReadingRequest;
         const { userContext, gameContext } = body;
+        const sanitizedQuestion = sanitizeUserText(gameContext.question);
+        const sanitizedTopic = sanitizeUserText(gameContext.topic, 120);
+        const sanitizedName = sanitizeUserText(userContext.name, 120);
+        const sanitizedGender = sanitizeUserText(userContext.gender, 60);
+        const sanitizedBirthdate = sanitizeUserText(userContext.birthdate, 60);
+        const sanitizedLocation = sanitizeUserText(userContext.location, 120);
+        let updatedTraitsDoc = await deps.userTraits.ensureForUser(userContext.uid);
+        const sanitizedTraits = sanitizeTraitMap(updatedTraitsDoc.traits);
 
         // Build user summary for prompt
         const userParts: string[] = [];
-        if (userContext.name) userParts.push('Name: ' + userContext.name);
-        if (userContext.gender) userParts.push('Gender: ' + userContext.gender);
-        if (userContext.location) userParts.push('Location: ' + userContext.location);
-        for (const [k, v] of Object.entries(userContext.traits || {})) {
-            userParts.push(k.replace(/_/g, ' ') + ': ' + v);
+        if (sanitizedName) userParts.push('Name: ' + sanitizedName);
+        if (sanitizedGender) userParts.push('Gender: ' + sanitizedGender);
+        if (sanitizedBirthdate) userParts.push('Birthdate: ' + sanitizedBirthdate);
+        if (sanitizedLocation) userParts.push('Location: ' + sanitizedLocation);
+        const traitsSummary = formatTraitSummary(sanitizedTraits);
+        if (traitsSummary !== 'No personal traits known.') {
+            userParts.push(traitsSummary);
         }
         const userSummary = userParts.length > 0
             ? userParts.join(' | ')
@@ -49,13 +65,34 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
         const prompt = buildReadingPrompt(
             userSummary,
             gameCtx,
-            gameContext.question,
+            formatPromptField('SELECTED TOPIC', sanitizedTopic),
+            formatPromptField('SEEKER QUESTION', sanitizedQuestion),
             userContext.tone,
             userContext.language,
         );
 
         const aiResult = await callAI(env, prompt, gameContext.turnCount);
         const parsed = parseReadingResponse(aiResult.text, aiResult.provider, aiResult.model);
+        const normalizedDelta = {
+            ...parsed.userContextDelta,
+            traits: {},
+        };
+
+        const customTopic = sanitizedTopic && !PREDEFINED_TOPICS.has(sanitizedTopic)
+            ? sanitizedTopic
+            : null;
+        if (customTopic || sanitizedQuestion) {
+            const extractionSource = [customTopic, sanitizedQuestion].filter(Boolean).join(' | ');
+            const extractedTraits = await extractTraitsFromUserInput(env, {
+                language: userContext.language,
+                existingTraits: updatedTraitsDoc.traits,
+                inputLabel: 'SEEKER CUSTOM INPUT',
+                inputText: extractionSource,
+            });
+            if (Object.keys(extractedTraits).length > 0) {
+                updatedTraitsDoc = await deps.userTraits.mergeForUser(userContext.uid, extractedTraits);
+            }
+        }
 
         const responseTime = Date.now() - startTime;
 
@@ -86,13 +123,24 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                         name: c.name,
                         reversed: c.reversed,
                     })),
-                    question: gameContext.question,
-                    topic: gameContext.topic,
-                    language: userContext.language,
-                    tone: userContext.tone,
-                    location: geo,
-                    originalRequest: body,
-                });
+                question: sanitizedQuestion,
+                topic: sanitizedTopic,
+                language: userContext.language,
+                tone: userContext.tone,
+                location: geo,
+                originalRequest: {
+                    ...body,
+                    userContext: {
+                        ...body.userContext,
+                        userTraits: deps.userTraits.toPayload(updatedTraitsDoc),
+                    },
+                    gameContext: {
+                        ...body.gameContext,
+                        question: sanitizedQuestion,
+                        topic: sanitizedTopic,
+                    },
+                },
+            });
             }
             await deps.games.applyReading(
                 gameContext.gameId,
@@ -106,11 +154,11 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                 uid: userContext.uid,
                 turnNumber: gameContext.turnCount + 1,
                 turnType: 'reading',
-                question: gameContext.question,
+                question: sanitizedQuestion,
                 questionDigest: null,
                 answerText: aiResult.text,
                 answerDigest: parsed.contextUpdate,
-                userContextDelta: parsed.userContextDelta as unknown as Record<string, unknown>,
+                userContextDelta: normalizedDelta as unknown as Record<string, unknown>,
                 aiProvider: aiResult.provider,
                 aiModel: aiResult.model,
                 responseTimeMs: responseTime,
@@ -123,7 +171,13 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                 city: geo.city,
                 language: userContext.language,
                 tone: userContext.tone,
+                name: sanitizedName,
+                gender: sanitizedGender,
+                birthdate: sanitizedBirthdate,
+                location: sanitizedLocation,
+                userTraitsId: updatedTraitsDoc.id,
             }).catch(() => {});
+            deps.users.applyContextDelta(userContext.uid, normalizedDelta).catch(() => {});
             deps.users.incrementStat(userContext.uid, 'totalReadings').catch(() => {});
             deps.indexWriter.addUserGame(userContext.uid, gameContext.gameId).catch(() => {});
             deps.indexWriter.addDateGame(date, gameContext.gameId).catch(() => {});
@@ -138,7 +192,11 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
 
         console.log(`Reading completed in ${responseTime}ms via ${aiResult.provider}/${aiResult.model}`);
 
-        return Response.json(parsed);
+        return Response.json({
+            ...parsed,
+            userContextDelta: normalizedDelta,
+            userTraits: deps.userTraits.toPayload(updatedTraitsDoc),
+        });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error('Reading handler error:', message);

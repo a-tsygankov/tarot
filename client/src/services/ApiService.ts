@@ -7,6 +7,7 @@ import type {
     FollowUpResponse,
     TtsRequest,
     TtsFallbackResponse,
+    TtsErrorResponse,
     SessionRequest,
     EventRequest,
     VersionResponse,
@@ -32,7 +33,7 @@ export class ApiService implements IApiService {
 
         const body: ReadingRequest = {
             userContext: this.userContext.toApiPayload(),
-            gameContext: game.toApiPayload(),
+            gameContext: game.toApiPayload({ noReversedCards: this.userContext.noReversedCards }),
         };
 
         const result = await this.post<ReadingResponse>(
@@ -54,7 +55,7 @@ export class ApiService implements IApiService {
 
         const body: FollowUpRequest = {
             userContext: this.userContext.toApiPayload(),
-            gameContext: game.toApiPayload(),
+            gameContext: game.toApiPayload({ noReversedCards: this.userContext.noReversedCards }),
             question,
         };
 
@@ -80,7 +81,7 @@ export class ApiService implements IApiService {
             text,
             language,
             voiceId: voiceId ?? undefined,
-            model: this.config.tts.defaultModel,
+            model: this.config.tts.debugModel,
             speed: this.config.tts.defaultSpeed,
         };
 
@@ -92,7 +93,19 @@ export class ApiService implements IApiService {
         }
 
         if (!response.ok) {
-            throw new Error('TTS request failed: ' + response.status);
+            let errorBody: TtsErrorResponse | null = null;
+            try {
+                errorBody = await response.json() as TtsErrorResponse;
+            } catch {
+                errorBody = null;
+            }
+
+            throw new TtsRequestError(
+                errorBody?.message || `TTS request failed: ${response.status}`,
+                response.status,
+                errorBody?.code ?? null,
+                errorBody?.details ?? null,
+            );
         }
 
         options?.progress?.report('Audio ready', 80);
@@ -107,6 +120,8 @@ export class ApiService implements IApiService {
             apiVersion: this.config.apiVersion,
             screenWidth: this.userContext.deviceInfo.screenWidth,
             screenHeight: this.userContext.deviceInfo.screenHeight,
+            device: this.userContext.deviceInfo.summary,
+            deviceInfo: this.userContext.deviceInfo,
         };
 
         try {
@@ -229,10 +244,22 @@ export class ApiService implements IApiService {
     }
 }
 
-/** Thrown when ElevenLabs TTS quota is exceeded. */
+/** Thrown when debug/provider-backed TTS quota is exceeded. */
 export class TtsQuotaExceededError extends Error {
     constructor(public readonly reason: string) {
         super('TTS quota exceeded: ' + reason);
         this.name = 'TtsQuotaExceededError';
+    }
+}
+
+export class TtsRequestError extends Error {
+    constructor(
+        message: string,
+        public readonly status: number,
+        public readonly code: string | null,
+        public readonly details: Record<string, unknown> | null,
+    ) {
+        super(message);
+        this.name = 'TtsRequestError';
     }
 }

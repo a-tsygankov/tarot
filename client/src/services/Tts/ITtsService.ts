@@ -3,6 +3,7 @@ import type { IProgressReporter } from '../IProgressReporter.js';
 export interface SpeakOptions {
     voiceId?: string;
     speed?: number;
+    provider?: 'browser' | 'piper';
     onStart?: () => void;
     onEnd?: () => void;
 }

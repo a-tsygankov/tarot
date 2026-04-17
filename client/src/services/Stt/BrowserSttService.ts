@@ -15,6 +15,8 @@ interface SpeechRecognitionErrorEvent {
 export class BrowserSttService implements ISttService {
     private recognition: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
     private available: boolean;
+    private activeSessionId = 0;
+    private listening = false;
 
     constructor() {
         const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
@@ -36,25 +38,81 @@ export class BrowserSttService implements ISttService {
             return;
         }
 
+        if (this.listening) {
+            this.forceReleaseRecognition();
+        }
+
+        const sessionId = ++this.activeSessionId;
+        this.listening = false;
+
         this.recognition.lang = lang;
 
         this.recognition.onresult = (e: SpeechRecognitionEvent) => {
+            if (sessionId !== this.activeSessionId) return;
             const result = e.results[e.results.length - 1];
             if ((result as any).isFinal) {
                 handlers.onResult?.(result[0].transcript);
+                this.listening = false;
+                this.stopRecognition('stop');
             } else {
                 handlers.onInterim?.(result[0].transcript);
             }
         };
 
-        this.recognition.onstart = () => handlers.onStart?.();
-        this.recognition.onend = () => handlers.onEnd?.();
-        this.recognition.onerror = (e: SpeechRecognitionErrorEvent) => handlers.onError?.(e.error);
+        this.recognition.onstart = () => {
+            if (sessionId !== this.activeSessionId) return;
+            this.listening = true;
+            handlers.onStart?.();
+        };
+        this.recognition.onend = () => {
+            if (sessionId !== this.activeSessionId) return;
+            this.listening = false;
+            handlers.onEnd?.();
+        };
+        this.recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+            if (sessionId !== this.activeSessionId) return;
+            this.listening = false;
+            handlers.onError?.(e.error);
+        };
 
-        this.recognition.start();
+        try {
+            this.recognition.start();
+        } catch (error) {
+            this.listening = false;
+            handlers.onError?.(error instanceof Error ? error.message : 'Failed to start speech recognition');
+        }
     }
 
     stop(): void {
-        this.recognition?.stop();
+        if (!this.recognition) return;
+        this.listening = false;
+        this.stopRecognition('abort');
+    }
+
+    private stopRecognition(mode: 'stop' | 'abort'): void {
+        if (!this.recognition) return;
+        try {
+            const fn = mode === 'abort' && typeof this.recognition.abort === 'function'
+                ? this.recognition.abort.bind(this.recognition)
+                : this.recognition.stop.bind(this.recognition);
+            fn();
+        } catch {
+            this.forceReleaseRecognition();
+        }
+    }
+
+    private forceReleaseRecognition(): void {
+        if (!this.recognition) return;
+        try {
+            if (typeof this.recognition.abort === 'function') {
+                this.recognition.abort();
+            } else if (typeof this.recognition.stop === 'function') {
+                this.recognition.stop();
+            }
+        } catch {
+            // Best effort: cleanup local listeners so stale sessions stop affecting UI.
+        } finally {
+            this.listening = false;
+        }
     }
 }

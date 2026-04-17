@@ -3,14 +3,18 @@ import type { FollowUpRequest } from '@shared/contracts/api-contracts.js';
 import { callAI } from '../services/ai-router.js';
 import { buildFollowUpPrompt } from '../prompts.js';
 import { parseFollowUpResponse } from '../services/response-parser.js';
+import { formatPromptField, formatTraitSummary, sanitizeTraitMap, sanitizeUserText } from '../services/prompt-safety.js';
 import type { R2GameRepository } from '../repositories/game-repository.js';
 import type { R2UserRepository } from '../repositories/user-repository.js';
+import type { R2UserTraitsRepository } from '../repositories/user-traits-repository.js';
 import type { R2AnalyticsRepository } from '../repositories/analytics-repository.js';
 import type { IndexWriter } from '../services/index-writer.js';
+import { extractTraitsFromUserInput } from '../services/trait-extraction.js';
 
 export interface FollowUpDeps {
     games: R2GameRepository;
     users: R2UserRepository;
+    userTraits: R2UserTraitsRepository;
     analytics: R2AnalyticsRepository;
     indexWriter: IndexWriter;
 }
@@ -24,14 +28,28 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
     try {
         const body = await request.json() as FollowUpRequest;
         const { userContext, gameContext, question } = body;
+        const sanitizedQuestion = sanitizeUserText(question);
+        if (!sanitizedQuestion) {
+            return Response.json({ error: 'Follow-up failed', message: 'Question is required' }, { status: 400 });
+        }
+        const sanitizedOriginalQuestion = sanitizeUserText(gameContext.question);
+        const sanitizedTopic = sanitizeUserText(gameContext.topic, 120);
+        const sanitizedName = sanitizeUserText(userContext.name, 120);
+        const sanitizedGender = sanitizeUserText(userContext.gender, 60);
+        const sanitizedBirthdate = sanitizeUserText(userContext.birthdate, 60);
+        const sanitizedLocation = sanitizeUserText(userContext.location, 120);
+        let updatedTraitsDoc = await deps.userTraits.ensureForUser(userContext.uid);
+        const sanitizedTraits = sanitizeTraitMap(updatedTraitsDoc.traits);
 
         // Build user summary
         const userParts: string[] = [];
-        if (userContext.name) userParts.push('Name: ' + userContext.name);
-        if (userContext.gender) userParts.push('Gender: ' + userContext.gender);
-        if (userContext.location) userParts.push('Location: ' + userContext.location);
-        for (const [k, v] of Object.entries(userContext.traits || {})) {
-            userParts.push(k.replace(/_/g, ' ') + ': ' + v);
+        if (sanitizedName) userParts.push('Name: ' + sanitizedName);
+        if (sanitizedGender) userParts.push('Gender: ' + sanitizedGender);
+        if (sanitizedBirthdate) userParts.push('Birthdate: ' + sanitizedBirthdate);
+        if (sanitizedLocation) userParts.push('Location: ' + sanitizedLocation);
+        const traitsSummary = formatTraitSummary(sanitizedTraits);
+        if (traitsSummary !== 'No personal traits known.') {
+            userParts.push(traitsSummary);
         }
         const userSummary = userParts.length > 0
             ? userParts.join(' | ')
@@ -56,13 +74,29 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
         const prompt = buildFollowUpPrompt(
             userSummary,
             gameCtx,
-            question,
+            formatPromptField('ORIGINAL TOPIC', sanitizedTopic),
+            formatPromptField('ORIGINAL QUESTION', sanitizedOriginalQuestion),
+            formatPromptField('SEEKER FOLLOW-UP QUESTION', sanitizedQuestion),
             userContext.tone,
             userContext.language,
         );
 
         const aiResult = await callAI(env, prompt, gameContext.turnCount);
         const parsed = parseFollowUpResponse(aiResult.text);
+        const normalizedDelta = parsed.userContextDelta ? {
+            ...parsed.userContextDelta,
+            traits: {},
+        } : null;
+
+        const extractedTraits = await extractTraitsFromUserInput(env, {
+            language: userContext.language,
+            existingTraits: updatedTraitsDoc.traits,
+            inputLabel: 'SEEKER FOLLOW-UP QUESTION',
+            inputText: sanitizedQuestion,
+        });
+        if (Object.keys(extractedTraits).length > 0) {
+            updatedTraitsDoc = await deps.userTraits.mergeForUser(userContext.uid, extractedTraits);
+        }
 
         const responseTime = Date.now() - startTime;
 
@@ -77,11 +111,11 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
                 uid: userContext.uid,
                 turnNumber: gameContext.turnCount + 1,
                 turnType: 'followup',
-                question,
+                question: sanitizedQuestion,
                 questionDigest: parsed.questionDigest,
                 answerText: parsed.answer,
                 answerDigest: parsed.answerDigest,
-                userContextDelta: parsed.userContextDelta as Record<string, unknown> | null,
+                userContextDelta: normalizedDelta as Record<string, unknown> | null,
                 aiProvider: aiResult.provider,
                 aiModel: aiResult.model,
                 responseTimeMs: responseTime,
@@ -89,6 +123,16 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
             });
 
             // Best-effort analytics
+            deps.users.upsert(userContext.uid, {
+                language: userContext.language,
+                tone: userContext.tone,
+                name: sanitizedName,
+                gender: sanitizedGender,
+                birthdate: sanitizedBirthdate,
+                location: sanitizedLocation,
+                userTraitsId: updatedTraitsDoc.id,
+            }).catch(() => {});
+            deps.users.applyContextDelta(userContext.uid, normalizedDelta ?? {}).catch(() => {});
             deps.users.incrementStat(userContext.uid, 'totalFollowUps').catch(() => {});
             deps.indexWriter.trackActiveUser(date, userContext.uid).catch(() => {});
             deps.analytics.incrementDaily(date, {
@@ -101,7 +145,11 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
 
         console.log(`Follow-up completed in ${responseTime}ms via ${aiResult.provider}/${aiResult.model}`);
 
-        return Response.json(parsed);
+        return Response.json({
+            ...parsed,
+            userContextDelta: normalizedDelta,
+            userTraits: deps.userTraits.toPayload(updatedTraitsDoc),
+        });
     } catch (err) {
         console.error('Follow-up handler error:', err);
         return Response.json(

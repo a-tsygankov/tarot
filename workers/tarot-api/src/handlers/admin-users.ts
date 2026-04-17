@@ -1,5 +1,5 @@
 import type { Env } from '../env.js';
-import type { GameDocument, SessionDocument, TurnDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
+import type { GameDocument, SessionDocument, TurnDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
 import {
     buildLocationKey,
     listDocuments,
@@ -32,9 +32,10 @@ export async function handleAdminUserDetail(request: Request, env: Env, uidFragm
             return Response.json({ error: 'User not found' }, { status: 404 });
         }
 
-        const [allGames, allSessions] = await Promise.all([
+        const [allGames, allSessions, userTraits] = await Promise.all([
             listDocuments<GameDocument>(env.R2, 'entities/games/'),
             listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
+            loadJson<UserTraitsDocument>(env.R2, `entities/user-traits/traits-${uid}.json`),
         ]);
 
         const userGames = allGames
@@ -77,7 +78,11 @@ export async function handleAdminUserDetail(request: Request, env: Env, uidFragm
         }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         return Response.json({
-            user,
+            user: {
+                ...user,
+                userTraits: userTraits?.traits ?? {},
+                latestDevice: userSessions.at(-1)?.device ?? null,
+            },
             games: userGames.slice().reverse().map(summarizeGame),
             sessions,
             locations: Array.from(locationMap.values()).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)),
@@ -106,9 +111,10 @@ export async function handleAdminGameDetail(request: Request, env: Env, gameId: 
             return Response.json({ error: 'Game not found' }, { status: 404 });
         }
 
-        const [session, user] = await Promise.all([
+        const [session, user, userTraits] = await Promise.all([
             loadJson<SessionDocument>(env.R2, `entities/sessions/${game.sessionId}.json`),
             loadJson<UserDocument>(env.R2, `entities/users/${game.uid}.json`),
+            loadJson<UserTraitsDocument>(env.R2, `entities/user-traits/traits-${game.uid}.json`),
         ]);
 
         const turns = await Promise.all(
@@ -125,6 +131,7 @@ export async function handleAdminGameDetail(request: Request, env: Env, gameId: 
                 name: user.name,
                 lastCity: user.locations.lastCity,
                 lastCountry: user.locations.lastCountry,
+                userTraits: userTraits?.traits ?? {},
             } : null,
             turns: turns.filter((turn): turn is TurnDocument => turn !== null),
         });
@@ -150,9 +157,10 @@ export async function handleAdminSessionDetail(request: Request, env: Env, sessi
             return Response.json({ error: 'Session not found' }, { status: 404 });
         }
 
-        const [allGames, user] = await Promise.all([
+        const [allGames, user, userTraits] = await Promise.all([
             listDocuments<GameDocument>(env.R2, 'entities/games/'),
             loadJson<UserDocument>(env.R2, `entities/users/${session.uid}.json`),
+            loadJson<UserTraitsDocument>(env.R2, `entities/user-traits/traits-${session.uid}.json`),
         ]);
         const sessionGames = allGames
             .filter(game => game.sessionId === sessionId)
@@ -168,7 +176,10 @@ export async function handleAdminSessionDetail(request: Request, env: Env, sessi
 
         return Response.json({
             session,
-            user,
+            user: user ? {
+                ...user,
+                userTraits: userTraits?.traits ?? {},
+            } : null,
             games: sessionGames.map(summarizeGame),
             turns: turns.filter((turn): turn is TurnDocument => turn !== null)
                 .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
@@ -191,11 +202,13 @@ export async function handleAdminLocationDetail(request: Request, env: Env, loca
 
     try {
         const target = parseLocationKey(locationKey);
-        const [allGames, allSessions, allUsers] = await Promise.all([
+        const [allGames, allSessions, allUsers, allUserTraits] = await Promise.all([
             listDocuments<GameDocument>(env.R2, 'entities/games/'),
             listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
             listDocuments<UserDocument>(env.R2, 'entities/users/'),
+            listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
         ]);
+        const traitsByUserId = new Map(allUserTraits.map(doc => [doc.userId, doc]));
 
         const matchesLocation = (city: string | null, country: string | null) =>
             (city ?? null) === target.city && (country ?? null) === target.country;
@@ -216,7 +229,7 @@ export async function handleAdminLocationDetail(request: Request, env: Env, loca
                 lastCity: user.locations.lastCity,
                 lastCountry: user.locations.lastCountry,
                 totalReadings: user.stats.totalReadings,
-                traits: user.traits,
+                userTraits: traitsByUserId.get(user.uid)?.traits ?? {},
             }))
             .sort((a, b) => b.totalReadings - a.totalReadings);
 

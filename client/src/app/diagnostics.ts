@@ -48,7 +48,9 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     }
     // Show worker version if API check succeeded
     if (apiCheck.serverVersion) {
-        console.log(`Worker: v${apiCheck.serverVersion.worker.version} | Schema: ${apiCheck.serverVersion.schema.current}`);
+        console.log(
+            `Client: v${config.version} | Worker: v${apiCheck.serverVersion.worker.version} | Schema: ${apiCheck.serverVersion.schema.current}`,
+        );
     }
     console.groupEnd();
 
@@ -64,11 +66,11 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.log(`Total readings: ${userContext.totalReadings}`);
     console.log(`Device: ${userContext.deviceInfo?.platform ?? 'unknown'} | ${userContext.deviceInfo?.screenWidth}×${userContext.deviceInfo?.screenHeight}`);
     // Show accumulated traits
-    const traitEntries = Object.entries(userContext.traits);
+    const traitEntries = Object.entries(userContext.userTraits?.traits ?? {});
     if (traitEntries.length > 0) {
         console.group('Known traits');
-        for (const [key, value] of traitEntries) {
-            console.log(`${key.replace(/_/g, ' ')}: ${value}`);
+        for (const [key, values] of traitEntries) {
+            console.log(`${key.replace(/_/g, ' ')}: ${values.join(', ')}`);
         }
         console.groupEnd();
     } else {
@@ -82,7 +84,8 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     console.log(`Deck: ${getCurrentDeckStyle()}`);
     console.log(`Font: ${localStorage.getItem('tarot-font') ?? 'Palatino'}${(localStorage.getItem('tarot-italic') ?? 'true') === 'true' ? ' (italic)' : ''}`);
     console.log(`TTS speed: ${localStorage.getItem('tarot-tts-speed') ?? '1.0'}×`);
-    console.log(`Voice ID: ${userContext.voiceId ?? 'off'}`);
+    console.log(`TTS engine: ${userContext.ttsProvider}`);
+    console.log(`Voice preference: ${userContext.voicePreference}`);
     console.groupEnd();
 
     // ── Geo (passive) ──
@@ -145,4 +148,3 @@ async function checkStt(stt: { isAvailable(): boolean }): Promise<HealthCheck> {
         detail: available ? 'available (Web Speech API)' : 'not available (no browser support)',
     };
 }
-

@@ -1,17 +1,9 @@
 /**
  * Passive geolocation service — no user permission required.
  *
- * Two-tier approach:
- *
- * 1. **Intl timezone** (instant, client-side) — `Intl.DateTimeFormat().resolvedOptions().timeZone`
- *    returns IANA timezone (e.g. "Europe/Berlin"). Accuracy: timezone region only.
- *    Cannot distinguish cities in the same timezone (e.g. NY, Boston, Philadelphia).
- *
- * 2. **Cloudflare IP geolocation** (async, server-side via `/api/geo`) — uses CF headers
- *    (`cf-ipcountry`, `cf.city`, `cf.region`, `cf.timezone`, `cf.latitude`, `cf.longitude`)
- *    attached to every Cloudflare Worker request. Accuracy: city-level.
- *    CAN distinguish NY from Boston from Philadelphia.
- *    Also returns the client's IP address.
+ * Single location source for the app: Cloudflare IP geolocation via `/api/geo`.
+ * We still keep the browser timezone internally for device/session metadata,
+ * but timezone is no longer used as a user-facing or prompt-facing location.
  *
  * Methods NOT used (require permission or leak data):
  * - `navigator.geolocation` — requires explicit user permission popup
@@ -66,9 +58,9 @@ export class GeoService {
         return this._ipGeo?.ip ?? null;
     }
 
-    /** Best available city: CF city > timezone-inferred city */
+    /** Best available city from Cloudflare IP geo */
     get city(): string | null {
-        return this._ipGeo?.city ?? this.inferredCity;
+        return this._ipGeo?.city ?? null;
     }
 
     /** Best available country */
@@ -91,10 +83,7 @@ export class GeoService {
     /** Summary for console/diagnostics */
     toSummary(): string {
         const parts: string[] = [];
-        if (this._timezone) parts.push(`TZ: ${this._timezone}`);
-        if (this._region) parts.push(`Region: ${this._region}`);
         if (this._ipGeo?.city) parts.push(`City: ${this._ipGeo.city}`);
-        else if (this.inferredCity) parts.push(`~City: ${this.inferredCity}`);
         if (this._ipGeo?.country) parts.push(`Country: ${this._ipGeo.country}`);
         if (this._ipGeo?.ip) parts.push(`IP: ${this._ipGeo.ip}`);
         return parts.length > 0 ? parts.join(' | ') : 'Unknown';

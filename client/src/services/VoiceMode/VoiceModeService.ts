@@ -114,6 +114,7 @@ export class VoiceModeService {
             if (response.userContextDelta) {
                 this.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this.userContext.applyUserTraits(response.userTraits);
 
             this._callbacks?.onOracleResponse(response.answer, response.answerDigest);
 

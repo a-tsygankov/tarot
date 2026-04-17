@@ -35,6 +35,7 @@ interface SpreadLayout {
     cards: CardLayout[];
     gap: string;
     wrapStyle?: string; // additional CSS for the cards-row container
+    rowClass?: string;
 }
 
 const SPREAD_LAYOUTS: Record<number, SpreadLayout> = {
@@ -45,7 +46,8 @@ const SPREAD_LAYOUTS: Record<number, SpreadLayout> = {
         ],
     },
     3: {
-        gap: '0.6em',
+        gap: '0.25em',
+        rowClass: 'three-card',
         cards: [
             { width: '110px', height: '180px', tilt: -15, offsetY: 8 },
             { width: '120px', height: '196px', tilt: 0, offsetY: 0 },
@@ -80,8 +82,10 @@ export class CardSpread extends LitElement {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                gap: 1.5em;
-                padding-top: 1em;
+                gap: 1.85em;
+                width: 100%;
+                box-sizing: border-box;
+                padding: 1em 1rem 0;
             }
 
             .cards-row {
@@ -89,6 +93,19 @@ export class CardSpread extends LitElement {
                 gap: 0.8em;
                 justify-content: center;
                 flex-wrap: wrap;
+            }
+
+            .cards-row.three-card {
+                flex-wrap: nowrap;
+                align-items: flex-start;
+                width: 100%;
+                max-width: min(100%, 360px);
+                margin-bottom: 1.9em;
+            }
+
+            .cards-row.three-card .card-slot:nth-child(2),
+            .cards-row.three-card .card-slot:nth-child(3) {
+                margin-left: -0.45em;
             }
 
             .card-slot {
@@ -112,29 +129,38 @@ export class CardSpread extends LitElement {
             }
 
             .question-section {
-                width: 100%;
-                max-width: 360px;
-                margin-top: 0.8em;
+                width: min(100%, 340px);
+                box-sizing: border-box;
+                align-self: center;
+                margin-top: 2.25em;
                 position: relative;
+            }
+
+            .question-input-wrap {
+                position: relative;
+                width: 100%;
             }
 
             .question-input {
                 width: 100%;
-                padding: 0.8em;
+                box-sizing: border-box;
+                padding: 0.7em 3.2em 0.7em 0.8em;
                 background: var(--bg-card);
                 border: 1px solid var(--border);
                 border-radius: 8px;
                 color: var(--text);
                 font-family: var(--font-body);
-                font-size: 0.95em;
-                resize: none;
+                font-size: 0.92em;
                 outline: none;
-                transition: border-color 0.2s;
-                min-height: 5.2em;
+                transition: border-color 0.2s, box-shadow 0.2s ease;
+                height: 2.8em;
+                line-height: 1.2;
+                white-space: nowrap;
             }
 
             .question-input:focus {
                 border-color: var(--gold-dim);
+                box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.08);
             }
 
             .question-input::placeholder {
@@ -168,6 +194,7 @@ export class CardSpread extends LitElement {
 
             .progress-section {
                 text-align: center;
+                margin-top: 2.35em;
             }
 
             .progress-text {
@@ -181,43 +208,34 @@ export class CardSpread extends LitElement {
                 gap: 0.8em;
             }
 
-            .question-toolbar {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 0.6em;
-                margin-bottom: 0.45em;
-            }
-
             .question-label {
                 color: var(--text-dim);
                 font-size: 0.78em;
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
-            }
-
-            .question-tools {
-                display: flex;
-                align-items: center;
-                gap: 0.45em;
+                margin-bottom: 0.35em;
             }
 
             .mic-btn {
-                display: inline-flex;
+                display: flex;
                 align-items: center;
                 justify-content: center;
-                min-width: 2.5em;
-                min-height: 2.5em;
+                width: 2.25em;
+                height: 2.25em;
                 border-radius: 999px;
                 border: 1px solid var(--border);
-                background: var(--bg-card);
+                background: rgba(15, 9, 26, 0.88);
                 color: var(--gold);
                 cursor: pointer;
                 transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+                position: absolute;
+                top: 50%;
+                right: 0.45em;
+                transform: translateY(-50%);
             }
 
             .mic-btn:hover {
-                transform: translateY(-1px);
+                transform: translateY(-50%) translateY(-1px);
                 border-color: var(--gold-dim);
             }
 
@@ -238,7 +256,7 @@ export class CardSpread extends LitElement {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                gap: 0.2em;
+                gap: 0.45em;
             }
 
             .cross-row {
@@ -250,11 +268,29 @@ export class CardSpread extends LitElement {
             tarot-card {
                 touch-action: manipulation;
             }
+
+            @media (max-width: 430px) {
+                .spread-container {
+                    gap: 1.55em;
+                    padding-inline: 0.45rem;
+                }
+
+                .cards-row.three-card {
+                    max-width: min(100%, 332px);
+                    margin-bottom: 2.1em;
+                }
+
+                .cards-row.three-card .card-slot:nth-child(2),
+                .cards-row.three-card .card-slot:nth-child(3) {
+                    margin-left: -0.9em;
+                }
+            }
         `,
     ];
 
     @property({ attribute: false }) services!: AppServices;
-    @query('.question-input') private _questionInput?: HTMLTextAreaElement;
+    @property({ type: Number }) version = 0;
+    @query('.question-input') private _questionInput?: HTMLInputElement;
 
     @state() private _dealtCards: Array<{ name: string; position: string; reversed: boolean }> = [];
     @state() private _question = '';
@@ -276,6 +312,17 @@ export class CardSpread extends LitElement {
     }
 
     private get _layout(): SpreadLayout {
+        if (this._spreadSize === 3 && this._isNarrowPortrait()) {
+            return {
+                gap: '0',
+                rowClass: 'three-card',
+                cards: [
+                    { width: '92px', height: '150px', tilt: -12, offsetY: 8 },
+                    { width: '104px', height: '170px', tilt: 0, offsetY: 0 },
+                    { width: '92px', height: '150px', tilt: 12, offsetY: 8 },
+                ],
+            };
+        }
         return SPREAD_LAYOUTS[this._spreadSize] ?? SPREAD_LAYOUTS[3];
     }
 
@@ -283,6 +330,13 @@ export class CardSpread extends LitElement {
         super.disconnectedCallback();
         void this.services?.audioCueService.stopOracleWaiting();
         this.services?.sttService.stop();
+    }
+
+    override willUpdate(changedProperties: Map<PropertyKey, unknown>): void {
+        if (changedProperties.has('version') && this.services?.userContext.noReversedCards) {
+            this._dealtCards = this._dealtCards.map(card => ({ ...card, reversed: false }));
+            this.services.gameContext.normalizeCards(true);
+        }
     }
 
     override render() {
@@ -296,13 +350,13 @@ export class CardSpread extends LitElement {
                 </div>
 
                 ${this._spreadSize === 5 ? this._renderCrossLayout() : html`
-                    <div class="cards-row" style=${rowStyle}>
+                    <div class="cards-row ${layout.rowClass ?? ''}" style=${rowStyle}>
                         ${this._positions.map((pos, i) => this._renderCardSlot(pos, i))}
                     </div>
                 `}
 
                 ${this._dealtCards.length < this._spreadSize ? html`
-                    <div class="dim-text">Tap a card to draw</div>
+                    <div class="dim-text" style="margin-top:1.35em;">Tap a card to draw</div>
                 ` : this._loading ? html`
                     <div class="progress-section">
                         <div class="spinner spinner-lg"></div>
@@ -310,21 +364,10 @@ export class CardSpread extends LitElement {
                     </div>
                 ` : html`
                     <div class="question-section stack gap-sm">
-                        <div class="question-toolbar">
-                            <div class="question-label">Ask Your Question</div>
-                            <div class="question-tools">
-                                ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
-                                    <button
-                                        class="mic-btn ${this._sttListening ? 'listening' : ''}"
-                                        title=${this._sttListening ? 'Stop dictation' : 'Speak your question'}
-                                        @click=${this._toggleQuestionDictation}
-                                    >${this._sttListening ? '■' : '🎙'}</button>
-                                ` : ''}
-                            </div>
-                        </div>
-                        <textarea
+                        <div class="question-label">Ask Your Question</div>
+                        <div class="question-input-wrap">
+                        <input
                             class="question-input"
-                            rows="2"
                             placeholder="Ask a question (optional)..."
                             .value=${this._question}
                             @focus=${() => {
@@ -340,16 +383,31 @@ export class CardSpread extends LitElement {
                                 }
                             }}
                             @input=${(e: InputEvent) => {
-                                this._question = (e.target as HTMLTextAreaElement).value;
+                                this._question = (e.target as HTMLInputElement).value;
                             }}
-                        ></textarea>
+                        />
+                        ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
+                            <button
+                                class="mic-btn ${this._sttListening ? 'listening' : ''}"
+                                title=${this._sttListening ? 'Stop dictation' : 'Speak your question'}
+                                @click=${this._toggleQuestionDictation}
+                            >${this._sttListening ? '■' : '🎙'}</button>
+                        ` : ''}
+                        </div>
                         <div class="question-status">${this._sttStatus}</div>
 
                         <div class="topic-chips">
                             ${(['Love', 'Career', 'Health', 'Spirit', 'Finance', 'Change'] as const).map(t => html`
                                 <button
                                     class="topic-chip ${this._selectedTopic === t ? 'selected' : ''}"
-                                    @click=${() => { this._selectedTopic = this._selectedTopic === t ? '' : t; }}
+                                    @click=${() => {
+                                        if (this._sttListening) {
+                                            this.services.sttService.stop();
+                                            this._sttListening = false;
+                                            this._sttStatus = '';
+                                        }
+                                        this._selectedTopic = this._selectedTopic === t ? '' : t;
+                                    }}
                                 >${t}</button>
                             `)}
                         </div>
@@ -394,6 +452,7 @@ export class CardSpread extends LitElement {
 
         const card = this._dealtCards[index];
         if (card) {
+            const effectiveReversed = this.services.userContext.noReversedCards ? false : card.reversed;
             return html`
                 <div class="card-slot dealt" style=${slotStyle}>
                     <tarot-card
@@ -401,9 +460,10 @@ export class CardSpread extends LitElement {
                         size=${this._spreadSize === 1 ? 'insight' : 'spread'}
                         .cardName=${card.name}
                         .position=${card.position}
-                        .reversed=${card.reversed}
+                        .reversed=${effectiveReversed}
                         .showMeta=${true}
                         .previewEnabled=${true}
+                        .audioCueService=${this.services.audioCueService}
                         .width=${this._pixelValue(cardLayout.width)}
                         .height=${this._pixelValue(cardLayout.height)}
                         .tiltDeg=${cardLayout.tilt}
@@ -424,6 +484,7 @@ export class CardSpread extends LitElement {
                     size=${this._spreadSize === 1 ? 'insight' : 'spread'}
                     .position=${position}
                     .previewEnabled=${true}
+                    .audioCueService=${this.services.audioCueService}
                     .activateOnTap=${canDeal}
                     .interactive=${canDeal}
                     .width=${this._pixelValue(cardLayout.width)}
@@ -438,7 +499,7 @@ export class CardSpread extends LitElement {
 
     private _dealCard(position: string): void {
         const name = this._drawRandomCard();
-        const reversed = Math.random() < 0.3;
+        const reversed = this.services.userContext.noReversedCards ? false : Math.random() < 0.3;
 
         const card = { name, position, reversed };
         this._dealtCards = [...this._dealtCards, card];
@@ -466,10 +527,21 @@ export class CardSpread extends LitElement {
     private async _fetchReading(): Promise<void> {
         if (!this.services || this._loading) return;
 
+        if (this._sttListening) {
+            this.services.sttService.stop();
+            this._sttListening = false;
+            this._sttStatus = '';
+        }
+
         this._loading = true;
         this.dispatchEvent(new CustomEvent('loading', { detail: true }));
 
         const game = this.services.gameContext;
+        game.normalizeCards(this.services.userContext.noReversedCards);
+        this._dealtCards = this._dealtCards.map(card => ({
+            ...card,
+            reversed: this.services.userContext.noReversedCards ? false : card.reversed,
+        }));
         game.question = this._question || null;
         game.topic = this._selectedTopic || null;
 
@@ -490,6 +562,7 @@ export class CardSpread extends LitElement {
             if (response.userContextDelta) {
                 this.services.userContext.applyAiUpdate(response.userContextDelta);
             }
+            this.services.userContext.applyUserTraits(response.userTraits);
 
             this.dispatchEvent(new CustomEvent('reading-ready'));
         } catch (err) {
@@ -508,6 +581,14 @@ export class CardSpread extends LitElement {
     private _pixelValue(value: string): number {
         const parsed = parseFloat(value);
         return Number.isFinite(parsed) ? parsed : 110;
+    }
+
+    private _isNarrowPortrait(): boolean {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+
+        return window.innerWidth <= 430 && window.innerHeight >= window.innerWidth;
     }
 
     private _toggleQuestionDictation(): void {
@@ -540,18 +621,23 @@ export class CardSpread extends LitElement {
             onResult: (transcript) => {
                 const clean = transcript.trim();
                 this._question = this._mergeTranscript(clean);
+                this._sttListening = false;
                 this._sttStatus = clean ? 'Question captured.' : '';
-                this.updateComplete.then(() => this._questionInput?.focus());
+                this.services.sttService.stop();
+                this.updateComplete.then(() => {
+                    this._questionInput?.focus();
+                });
             },
             onEnd: () => {
                 this._sttListening = false;
-                if (this._sttStatus === 'Listening...') {
+                if (this._sttStatus.startsWith('Listening')) {
                     this._sttStatus = '';
                 }
             },
             onError: (error) => {
                 this._sttListening = false;
                 this._sttStatus = `Speech input error: ${error}`;
+                this.services.sttService.stop();
             },
         });
     }
@@ -563,6 +649,7 @@ export class CardSpread extends LitElement {
 
         return [this._sttBaseQuestion, transcript].filter(Boolean).join(this._sttBaseQuestion ? ' ' : '');
     }
+
 }
 
 declare global {

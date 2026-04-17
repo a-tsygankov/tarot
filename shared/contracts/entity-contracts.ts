@@ -2,7 +2,8 @@
  * R2 entity document contracts.
  * Every document carries type and schemaVersion for runtime validation.
  */
-import type { ReadingRequest } from './api-contracts.js';
+import type { ReadingRequest, TraitValueMap } from './api-contracts.js';
+import type { DeviceInfo } from '../models/user-context.js';
 
 export interface BaseDocument {
     type: string;
@@ -19,7 +20,7 @@ export interface UserDocument extends BaseDocument {
     name: string | null;
     gender: string | null;
     birthdate: string | null;
-    traits: Record<string, string>;
+    userTraitsId: string | null;
     stats: {
         totalReadings: number;
         totalFollowUps: number;
@@ -35,6 +36,15 @@ export interface UserDocument extends BaseDocument {
     etagVersion: number;
 }
 
+export interface UserTraitsDocument extends BaseDocument {
+    type: 'user-traits';
+    id: string;
+    userId: string;
+    traits: TraitValueMap;
+    createdAt: string;
+    updatedAt: string;
+}
+
 // ── Session ──────────────────────────────────────────────────────────
 
 export interface SessionDocument extends BaseDocument {
@@ -46,6 +56,7 @@ export interface SessionDocument extends BaseDocument {
     city: string | null;
     timezone: string | null;
     device: string | null;
+    deviceInfo?: DeviceInfo | null;
     userAgent: string | null;
     appVersion: string;
     screenWidth: number | null;

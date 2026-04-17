@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import deckIndexPlugin from './vite-plugin-deck-index.js';
 
 export default defineConfig({
+    plugins: [deckIndexPlugin()],
     base: '/tarot/',
     define: {
         'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
@@ -15,12 +17,19 @@ export default defineConfig({
         outDir: 'dist',
         sourcemap: true,
     },
+    worker: {
+        format: 'es',
+    },
     server: {
         port: 3000,
         open: process.env.PLAYWRIGHT !== '1',
         proxy: {
             '/api': {
                 target: 'http://127.0.0.1:8787',
+                changeOrigin: true,
+            },
+            '/piper-assets': {
+                target: 'http://127.0.0.1:8788',
                 changeOrigin: true,
             },
         },

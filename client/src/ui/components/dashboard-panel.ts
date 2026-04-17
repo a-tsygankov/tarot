@@ -50,7 +50,7 @@ interface UserDetailData {
         name: string | null;
         gender: string | null;
         birthdate: string | null;
-        traits: Record<string, string>;
+        userTraits: Record<string, string[]>;
         stats: { totalReadings: number; totalFollowUps: number };
         preferences: { language: string; tone: string };
         locations: { lastCountry: string | null; lastCity: string | null };
@@ -594,7 +594,7 @@ export class DashboardPanel extends LitElement {
     @state() private _loading = false;
     @state() private _error = '';
     @state() private _keyInput = '';
-    @state() private _days = 7;
+    @state() private _days = 1;
     @state() private _authenticated = false;
     @state() private _validating = false;
 
@@ -757,7 +757,7 @@ export class DashboardPanel extends LitElement {
 
         return html`
             <div class="controls">
-                ${([7, 14, 30] as const).map(d => html`
+                ${([1, 7, 14, 30] as const).map(d => html`
                     <button
                         class="period-btn ${this._days === d ? 'active' : ''}"
                         @click=${() => { this._days = d; this._fetchDashboard(); }}
@@ -1164,15 +1164,15 @@ export class DashboardPanel extends LitElement {
                 </div>
 
                 <!-- Traits -->
-                ${Object.keys(u.traits).length > 0 ? html`
+                ${Object.keys(u.userTraits).length > 0 ? html`
                     <div class="detail-section">
                         <div class="section-title">Traits</div>
                         <div class="trait-grid">
-                            ${Object.entries(u.traits).map(([k, v]) => html`
+                            ${Object.entries(u.userTraits).flatMap(([k, values]) => values.map(v => html`
                                 <div class="trait-pill">
                                     <span class="trait-key">${k.replace(/_/g, ' ')}:</span>${v}
                                 </div>
-                            `)}
+                            `))}
                         </div>
                     </div>
                 ` : nothing}

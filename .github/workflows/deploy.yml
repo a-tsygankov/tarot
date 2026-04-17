@@ -96,3 +96,32 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-tts-assets:
+    runs-on: ubuntu-latest
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' || true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: workers/tts-assets/package-lock.json
+
+      - name: Install dependencies
+        working-directory: workers/tts-assets
+        run: npm ci
+
+      - name: Type check
+        working-directory: workers/tts-assets
+        run: npx tsc --noEmit
+
+      - name: Deploy tts-assets to Cloudflare Workers
+        working-directory: workers/tts-assets
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

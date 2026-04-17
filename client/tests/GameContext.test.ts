@@ -55,6 +55,7 @@ describe('GameContext', () => {
                 },
                 contextUpdate: 'Distilled summary',
                 userContextDelta: { name: null, gender: null, birthdate: null, location: null, traits: {} },
+                userTraits: null,
                 provider: 'gemini',
                 model: 'gemini-2.5-flash',
             };
@@ -134,6 +135,28 @@ describe('GameContext', () => {
             expect(payload.question).toBe('Will my relationship work out?');
             expect(payload.qaDigests).toHaveLength(2);
             expect(payload.turnCount).toBe(1);
+        });
+
+        it('strips reversed flags when no reversed cards is enabled', () => {
+            game.addCard({ name: 'Death', position: 'Present', reversed: true });
+
+            const payload = game.toApiPayload({ noReversedCards: true });
+
+            expect(payload.cards).toEqual([
+                { name: 'Death', position: 'Present', reversed: false },
+            ]);
+        });
+    });
+
+    describe('normalizeCards', () => {
+        it('converts existing reversed cards to upright when enabled', () => {
+            game.addCard({ name: 'Death', position: 'Present', reversed: true });
+
+            game.normalizeCards(true);
+
+            expect(game.cards).toEqual([
+                { name: 'Death', position: 'Present', reversed: false },
+            ]);
         });
     });
 

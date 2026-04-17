@@ -3,9 +3,9 @@ import { UserContext } from '../models/UserContext.js';
 import { GameContext } from '../models/GameContext.js';
 import { ApiService } from '../services/ApiService.js';
 import { BrowserSttService } from '../services/Stt/BrowserSttService.js';
-import { ElevenLabsTtsService } from '../services/Tts/ElevenLabsTtsService.js';
 import { BrowserTtsService } from '../services/Tts/BrowserTtsService.js';
-import { FallbackTtsService } from '../services/Tts/FallbackTtsService.js';
+import { PiperTtsService } from '../services/Tts/PiperTtsService.js';
+import { SelectableTtsService } from '../services/Tts/SelectableTtsService.js';
 import { SpeechPreferencesResolver } from '../services/Speech/SpeechPreferencesResolver.js';
 import { SpeechService } from '../services/Speech/SpeechService.js';
 import { CompatibilityService } from '../services/Versioning/CompatibilityService.js';
@@ -44,15 +44,16 @@ export function createAppServices(): AppServices {
     // API
     const apiService = new ApiService(CONFIG, userContext);
 
-    // TTS — ElevenLabs with browser fallback
-    const elevenTts = new ElevenLabsTtsService(apiService, CONFIG);
+    // TTS — explicit provider selection, persisted in UserContext.
     const browserTts = new BrowserTtsService();
-    const ttsService: ITtsService = CONFIG.tts.fallbackToBrowser
-        ? new FallbackTtsService(elevenTts, browserTts)
-        : elevenTts;
+    const piperTts = new PiperTtsService(CONFIG);
+    const ttsService: ITtsService = new SelectableTtsService({
+        browser: browserTts,
+        piper: piperTts,
+    }, userContext.ttsProvider);
     const speechPreferences = new SpeechPreferencesResolver(CONFIG);
     const speechService = new SpeechService(ttsService, speechPreferences);
-    const audioCueService: IAudioCueService = new AudioCueService();
+    const audioCueService: IAudioCueService = new AudioCueService(userContext);
 
     // STT — browser only
     const sttService: ISttService = new BrowserSttService();
@@ -63,7 +64,12 @@ export function createAppServices(): AppServices {
     // Geo (passive, no permission needed)
     const geoService = new GeoService(CONFIG.apiBase);
     // Kick off async IP geo fetch (non-blocking)
-    geoService.fetchIpGeo().catch(() => {});
+    geoService.fetchIpGeo()
+        .then(geo => {
+            if (!geo) return;
+            userContext.applyGeoLocation(geo.city, geo.country, geo.ip);
+        })
+        .catch(() => {});
 
     return {
         config: CONFIG,

@@ -1,6 +1,7 @@
 import type { UserDocument } from '@shared/contracts/entity-contracts.js';
 import { WORKER_CONFIG } from '../config.js';
 import { r2GetJson, r2PutJson } from '../services/r2-adapter.js';
+import { sanitizeUserText } from '../services/prompt-safety.js';
 
 const PREFIX = 'entities/users';
 
@@ -22,6 +23,11 @@ export class R2UserRepository {
             city?: string | null;
             language?: string;
             tone?: string;
+            name?: string | null;
+            gender?: string | null;
+            birthdate?: string | null;
+            location?: string | null;
+            userTraitsId?: string | null;
         },
     ): Promise<UserDocument> {
         const now = new Date().toISOString();
@@ -33,6 +39,11 @@ export class R2UserRepository {
             if (update.city) existing.locations.lastCity = update.city;
             if (update.language) existing.preferences.language = update.language;
             if (update.tone) existing.preferences.tone = update.tone;
+            if (update.name !== undefined) existing.name = sanitizeUserText(update.name, 120);
+            if (update.gender !== undefined) existing.gender = sanitizeUserText(update.gender, 60);
+            if (update.birthdate !== undefined) existing.birthdate = sanitizeUserText(update.birthdate, 60);
+            if (update.location !== undefined) existing.locations.lastCity = sanitizeUserText(update.location, 120);
+            if (update.userTraitsId !== undefined) existing.userTraitsId = update.userTraitsId;
             existing.etagVersion += 1;
             await r2PutJson(this.r2, this.key(uid), existing);
             return existing;
@@ -44,10 +55,10 @@ export class R2UserRepository {
             uid,
             firstSeenAt: now,
             lastSeenAt: now,
-            name: null,
-            gender: null,
-            birthdate: null,
-            traits: {},
+            name: sanitizeUserText(update.name, 120),
+            gender: sanitizeUserText(update.gender, 60),
+            birthdate: sanitizeUserText(update.birthdate, 60),
+            userTraitsId: update.userTraitsId ?? null,
             stats: { totalReadings: 0, totalFollowUps: 0 },
             preferences: {
                 language: update.language ?? 'ENG',
@@ -55,7 +66,7 @@ export class R2UserRepository {
             },
             locations: {
                 lastCountry: update.country ?? null,
-                lastCity: update.city ?? null,
+                lastCity: sanitizeUserText(update.location, 120) ?? update.city ?? null,
             },
             etagVersion: 1,
         };
@@ -67,6 +78,33 @@ export class R2UserRepository {
         const doc = await this.get(uid);
         if (!doc) return;
         doc.stats[stat] += 1;
+        doc.etagVersion += 1;
+        await r2PutJson(this.r2, this.key(uid), doc);
+    }
+
+    async applyContextDelta(uid: string, update: {
+        name?: string | null;
+        gender?: string | null;
+        birthdate?: string | null;
+        location?: string | null;
+    }): Promise<void> {
+        const doc = await this.get(uid);
+        if (!doc) {
+            return;
+        }
+
+        const name = sanitizeUserText(update.name, 120);
+        const gender = sanitizeUserText(update.gender, 60);
+        const birthdate = sanitizeUserText(update.birthdate, 60);
+        const location = sanitizeUserText(update.location, 120);
+
+        if (name) doc.name = name;
+        if (gender) doc.gender = gender;
+        if (birthdate) doc.birthdate = birthdate;
+        if (location) {
+            doc.locations.lastCity = location;
+        }
+
         doc.etagVersion += 1;
         await r2PutJson(this.r2, this.key(uid), doc);
     }

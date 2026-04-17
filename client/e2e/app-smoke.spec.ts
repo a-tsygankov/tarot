@@ -50,6 +50,7 @@ test('changing language or tone refreshes the reading in place', async ({ page }
                 },
                 contextUpdate: 'digest-1',
                 userContextDelta: { name: null, gender: null, birthdate: null, location: null, traits: {} },
+                userTraits: null,
                 provider: 'mock',
                 model: 'mock-1',
             }
@@ -60,6 +61,7 @@ test('changing language or tone refreshes the reading in place', async ({ page }
                 },
                 contextUpdate: 'digest-2',
                 userContextDelta: { name: null, gender: null, birthdate: null, location: null, traits: {} },
+                userTraits: null,
                 provider: 'mock',
                 model: 'mock-2',
             };

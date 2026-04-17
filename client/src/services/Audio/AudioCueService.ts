@@ -1,5 +1,6 @@
 import { TarotSoundManager } from './TarotSoundManager.js';
 import type { IAudioCueService } from './IAudioCueService.js';
+import type { UserContext } from '../../models/UserContext.js';
 
 export class AudioCueService implements IAudioCueService {
     private readonly soundManager = new TarotSoundManager({
@@ -8,7 +9,10 @@ export class AudioCueService implements IAudioCueService {
 
     private oracleWaitingPlayback: { stop: (options?: { durationMs?: number }) => Promise<void> } | null = null;
 
+    constructor(private readonly userContext: UserContext) {}
+
     async playCardReveal(): Promise<void> {
+        if (this.userContext.muted) return;
         try {
             await this.soundManager.playCardReveal({ fadeInMs: 20 });
         } catch (error) {
@@ -16,7 +20,74 @@ export class AudioCueService implements IAudioCueService {
         }
     }
 
+    async playCardPreviewOpen(): Promise<void> {
+        if (this.userContext.muted) return;
+        try {
+            await this.soundManager.playCardPreview({
+                fadeInMs: 8,
+                closing: false,
+                volume: 0.72,
+            });
+        } catch (error) {
+            console.warn('Card preview open sound failed:', error);
+        }
+    }
+
+    async playCardPreviewClose(): Promise<void> {
+        if (this.userContext.muted) return;
+        try {
+            await this.soundManager.playCardPreview({
+                fadeInMs: 4,
+                closing: true,
+                volume: 0.64,
+            });
+        } catch (error) {
+            console.warn('Card preview close sound failed:', error);
+        }
+    }
+
+    async playButtonPress(): Promise<void> {
+        try {
+            await this.soundManager.playButtonPress({ fadeInMs: 4, volume: 0.62 });
+        } catch (error) {
+            console.warn('Button press sound failed:', error);
+        }
+    }
+
+    async playPanelOpen(): Promise<void> {
+        try {
+            await this.soundManager.playPanelOpen({ fadeInMs: 10, volume: 0.72 });
+        } catch (error) {
+            console.warn('Panel open sound failed:', error);
+        }
+    }
+
+    async playPanelClose(): Promise<void> {
+        try {
+            await this.soundManager.playPanelClose({ fadeInMs: 4, volume: 0.58 });
+        } catch (error) {
+            console.warn('Panel close sound failed:', error);
+        }
+    }
+
+    async playOracleArrival(): Promise<void> {
+        try {
+            await this.soundManager.playOracleArrival({ fadeInMs: 12, volume: 0.78 });
+        } catch (error) {
+            console.warn('Oracle arrival sound failed:', error);
+        }
+    }
+
+    async playErrorPulse(): Promise<void> {
+        try {
+            await this.soundManager.playErrorPulse({ fadeInMs: 3, volume: 0.52 });
+        } catch (error) {
+            console.warn('Error pulse sound failed:', error);
+        }
+    }
+
     async startOracleWaiting(): Promise<void> {
+        if (this.userContext.muted) return;
         try {
             await this.stopOracleWaiting();
             this.oracleWaitingPlayback = await this.soundManager.playOracleWaiting({
@@ -36,5 +107,11 @@ export class AudioCueService implements IAudioCueService {
         const playback = this.oracleWaitingPlayback;
         this.oracleWaitingPlayback = null;
         await playback.stop({ durationMs: 220 });
+    }
+
+    async syncSettings(): Promise<void> {
+        if (this.userContext.muted) {
+            await this.stopOracleWaiting();
+        }
     }
 }

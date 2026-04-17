@@ -1,7 +1,9 @@
 import { createAppServices } from './app/composition-root.js';
 import { runDiagnostics } from './app/diagnostics.js';
+import { CONFIG } from './app/config.js';
 import { restoreTheme } from './ui/styles/themes.js';
 import { initDeckStyle } from './ui/components/card-art-registry.js';
+import { registerPiperServiceWorker } from './services/Tts/register-piper-service-worker.js';
 
 // Register all Lit components
 import './ui/components/tarot-app.js';
@@ -27,6 +29,10 @@ async function init() {
     document.documentElement.style.setProperty('--font-reading-size', fontSizeMap[fontSize] ?? '1em');
 
     const services = createAppServices();
+    const activeLanguage = CONFIG.languages.find(language => language.code === services.userContext.language);
+    if (!navigator.webdriver) {
+        void registerPiperServiceWorker(CONFIG, activeLanguage?.piperVoiceId ?? null);
+    }
 
     // Populate UserContext with IP geo data when available (non-blocking)
     services.geoService.fetchIpGeo().then(geo => {

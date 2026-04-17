@@ -11,6 +11,7 @@ export async function callGemini(
 ): Promise<{ text: string; model: string }> {
     const budget = getTokenBudget(turnCount);
     const models = [
+        WORKER_CONFIG.ai.models.gemini.lite,
         WORKER_CONFIG.ai.models.gemini.fast,
         WORKER_CONFIG.ai.models.gemini.quality,
     ];

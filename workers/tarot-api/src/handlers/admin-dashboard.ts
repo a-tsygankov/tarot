@@ -1,5 +1,5 @@
 import type { Env } from '../env.js';
-import type { DailySummary, GameDocument, SessionDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
+import type { DailySummary, GameDocument, SessionDocument, TurnDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
 import { buildLocationKey, listDocuments, requireAdmin } from './admin-helpers.js';
 
 /**
@@ -8,11 +8,12 @@ import { buildLocationKey, listDocuments, requireAdmin } from './admin-helpers.j
  */
 export interface DashboardResponse {
     period: { from: string; to: string };
+    scopeDays: number;
     totals: {
-        users: number;
-        readings: number;
-        followUps: number;
-        sessions: number;
+        users: { total: number; scope: number };
+        readings: { total: number; scope: number };
+        followUps: { total: number; scope: number };
+        sessions: { total: number; scope: number };
     };
     daily: DailySummary[];
     topLanguages: Array<{ language: string; count: number }>;
@@ -37,12 +38,13 @@ export interface DashboardResponse {
         birthdate: string | null;
         language: string;
         tone: string;
+        latestDevice: string | null;
         totalReadings: number;
         totalFollowUps: number;
         lastSeenAt: string;
         lastCity: string | null;
         lastCountry: string | null;
-        traits: Record<string, string>;
+        userTraits: Record<string, string[]>;
         sessionIds: string[];
         locationKeys: string[];
         recentGameIds: string[];
@@ -82,7 +84,7 @@ export interface DashboardResponse {
 }
 
 /**
- * GET /api/admin/dashboard?days=7
+ * GET /api/admin/dashboard?days=1|7|30
  * Returns aggregated analytics for the dashboard.
  * Protected by ANALYTICS_KEY.
  */
@@ -93,7 +95,8 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
     }
 
     const url = new URL(request.url);
-    const days = Math.min(parseInt(url.searchParams.get('days') ?? '7', 10), 90);
+    const requestedDays = parseInt(url.searchParams.get('days') ?? '7', 10);
+    const days = [1, 7, 30].includes(requestedDays) ? requestedDays : 7;
 
     try {
         const today = new Date();
@@ -127,10 +130,12 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         })();
 
-        const [allUsers, allSessions, allGames] = await Promise.all([
+        const [allUsers, allSessions, allGames, allTurns, allUserTraits] = await Promise.all([
             listDocuments<UserDocument>(env.R2, 'entities/users/'),
             listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
             listDocuments<GameDocument>(env.R2, 'entities/games/'),
+            listDocuments<TurnDocument>(env.R2, 'entities/turns/'),
+            listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
         ]);
 
         // Fetch recent games (last 20)
@@ -170,58 +175,49 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             return games.slice(-20).reverse();
         })();
 
-        // Fetch performance from recent turns
-        const perfPromise = (async () => {
-            let totalMs = 0;
-            let count = 0;
-            const providers: Record<string, number> = {};
-            // Sample from today's and yesterday's games
-            for (const date of dates.slice(0, 2)) {
-                const idx = await env.R2.get(`indexes/date-games/${date}.json`);
-                if (!idx) continue;
-                try {
-                    const data = await idx.json() as { gameIds: string[] };
-                    const gameIds = (data.gameIds ?? []).slice(-5);
-                    for (const gid of gameIds) {
-                        // Check turn 1
-                        const tObj = await env.R2.get(`entities/turns/${gid}/1.json`);
-                        if (!tObj) continue;
-                        try {
-                            const t = await tObj.json() as Record<string, unknown>;
-                            const ms = t.responseTimeMs as number;
-                            const provider = t.aiProvider as string;
-                            if (ms > 0) {
-                                totalMs += ms;
-                                count++;
-                            }
-                            if (provider) {
-                                providers[provider] = (providers[provider] ?? 0) + 1;
-                            }
-                        } catch { /* skip */ }
-                    }
-                } catch { /* skip */ }
-            }
-            return {
-                avgResponseMs: count > 0 ? Math.round(totalMs / count) : 0,
-                totalTurns: count,
-                providerBreakdown: providers,
-            };
-        })();
-
-        const [dailyResults, activeUsersToday, recentGames, performance] = await Promise.all([
+        const [dailyResults, activeUsersToday, recentGames] = await Promise.all([
             Promise.all(dailyPromises),
             activeUsersPromise,
             recentGamesPromise,
-            perfPromise,
         ]);
         const daily = dailyResults.filter((d): d is DailySummary => d !== null);
+        const scopeStart = dates[dates.length - 1];
+        const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
+        const scopedReadingTurns = allTurns.filter(turn => turn.turnType === 'reading' && isWithinScope(turn.createdAt));
+        const providerBreakdown: Record<string, number> = {};
+        let totalReadingMs = 0;
+        for (const turn of scopedReadingTurns) {
+            if (turn.responseTimeMs > 0) {
+                totalReadingMs += turn.responseTimeMs;
+            }
+            if (turn.aiProvider) {
+                providerBreakdown[turn.aiProvider] = (providerBreakdown[turn.aiProvider] ?? 0) + 1;
+            }
+        }
+        const performance = {
+            avgResponseMs: scopedReadingTurns.length > 0 ? Math.round(totalReadingMs / scopedReadingTurns.length) : 0,
+            totalTurns: scopedReadingTurns.length,
+            providerBreakdown,
+        };
 
         // Aggregate totals
         const totals = {
-            users: allUsers.length,
-            readings: daily.reduce((s, d) => s + (d.readings ?? 0), 0),
-            followUps: daily.reduce((s, d) => s + (d.followUps ?? 0), 0),
-            sessions: daily.reduce((s, d) => s + (d.sessions ?? 0), 0),
+            users: {
+                total: allUsers.length,
+                scope: allUsers.filter(user => isWithinScope(user.firstSeenAt)).length,
+            },
+            readings: {
+                total: allGames.length,
+                scope: allGames.filter(game => isWithinScope(game.createdAt)).length,
+            },
+            followUps: {
+                total: allTurns.filter(turn => turn.turnType === 'followup').length,
+                scope: allTurns.filter(turn => turn.turnType === 'followup' && isWithinScope(turn.createdAt)).length,
+            },
+            sessions: {
+                total: allSessions.length,
+                scope: allSessions.filter(session => isWithinScope(session.createdAt)).length,
+            },
         };
 
         // Aggregate top languages
@@ -235,21 +231,32 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .map(([language, count]) => ({ language, count }))
             .sort((a, b) => b.count - a.count);
 
+        // Filter entities to the selected date scope
+        const cutoff = dates[dates.length - 1]; // earliest date in range (YYYY-MM-DD)
+        const scopedUsers = allUsers.filter(u => u.lastSeenAt >= cutoff);
+        const scopedSessions = allSessions.filter(s => s.createdAt >= cutoff);
+        const scopedGames = allGames.filter(g => g.createdAt >= cutoff);
+
         const sessionsByUid = new Map<string, SessionDocument[]>();
-        for (const session of allSessions) {
+        for (const session of scopedSessions) {
             const current = sessionsByUid.get(session.uid) ?? [];
             current.push(session);
             sessionsByUid.set(session.uid, current);
         }
 
         const gamesByUid = new Map<string, GameDocument[]>();
-        for (const game of allGames) {
+        for (const game of scopedGames) {
             const current = gamesByUid.get(game.uid) ?? [];
             current.push(game);
             gamesByUid.set(game.uid, current);
         }
 
-        const users = allUsers
+        const traitsByUserId = new Map<string, UserTraitsDocument>();
+        for (const traits of allUserTraits) {
+            traitsByUserId.set(traits.userId, traits);
+        }
+
+        const users = scopedUsers
             .map(user => {
                 const userSessions = (sessionsByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
                 const userGames = (gamesByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -265,12 +272,13 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                     birthdate: user.birthdate,
                     language: user.preferences.language,
                     tone: user.preferences.tone,
+                    latestDevice: userSessions[0]?.device ?? null,
                     totalReadings: user.stats.totalReadings,
                     totalFollowUps: user.stats.totalFollowUps,
                     lastSeenAt: user.lastSeenAt,
                     lastCity: user.locations.lastCity,
                     lastCountry: user.locations.lastCountry,
-                    traits: user.traits,
+                    userTraits: traitsByUserId.get(user.uid)?.traits ?? {},
                     sessionIds: userSessions.map(session => session.sessionId),
                     locationKeys,
                     recentGameIds: userGames.slice(0, 5).map(game => game.gameId),
@@ -278,9 +286,9 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             })
             .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
 
-        const sessions = allSessions
+        const sessions = scopedSessions
             .map(session => {
-                const sessionGames = allGames
+                const sessionGames = scopedGames
                     .filter(game => game.sessionId === session.sessionId)
                     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
                 return {
@@ -300,7 +308,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         const locationMap = new Map<string, DashboardResponse['locations'][number]>();
-        for (const game of allGames) {
+        for (const game of scopedGames) {
             const key = buildLocationKey(game.location?.city ?? null, game.location?.country ?? null);
             if (!game.location?.city && !game.location?.country) {
                 continue;
@@ -327,7 +335,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
             locationMap.set(key, current);
         }
-        for (const session of allSessions) {
+        for (const session of scopedSessions) {
             if (!session.city && !session.country) {
                 continue;
             }
@@ -357,6 +365,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
 
         const response: DashboardResponse = {
             period: { from: dates[dates.length - 1], to: dates[0] },
+            scopeDays: days,
             totals,
             daily: daily.sort((a, b) => a.date.localeCompare(b.date)),
             topLanguages,

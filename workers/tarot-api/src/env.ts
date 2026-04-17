@@ -10,7 +10,7 @@ export interface Env {
     ANTHROPIC_KEY: string;
     ELEVENLABS_KEY: string;
     ANALYTICS_KEY: string;
-    DEFAULT_VOICE_ID: string;
+    DEFAULT_ELEVENLABS_VOICE_ID: string;
 
     // Vars
     ALLOWED_ORIGINS: string;

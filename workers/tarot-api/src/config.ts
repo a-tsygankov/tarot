@@ -13,6 +13,7 @@ export const WORKER_CONFIG = {
         fallbackProvider: 'anthropic' as const,
         models: {
             gemini: {
+                lite: 'gemini-2.5-flash-lite',
                 fast: 'gemini-2.5-flash',
                 quality: 'gemini-2.5-pro',
             },
@@ -36,7 +37,7 @@ export const WORKER_CONFIG = {
         eventsPerMinute: 100,
     },
 
-    schemaVersion: '2026.04.01-01',
+    schemaVersion: '2026.04.08-01',
 } as const;
 
 /**

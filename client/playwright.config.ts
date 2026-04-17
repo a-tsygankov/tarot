@@ -27,6 +27,13 @@ export default defineConfig({
             timeout: 120_000,
         },
         {
+            command: 'npx wrangler dev --port 8788',
+            cwd: '../workers/tts-assets',
+            url: 'http://127.0.0.1:8788/piper/manifest.json',
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+        },
+        {
             command: 'npx vite --port 3000 --strictPort',
             cwd: '.',
             env: {
