@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import deckIndexPlugin from './vite-plugin-deck-index.js';
 
 export default defineConfig({
+    plugins: [deckIndexPlugin()],
     base: '/tarot/',
     define: {
         'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),

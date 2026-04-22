@@ -35,11 +35,22 @@ export class TarotApp extends LitElement {
                 position: relative;
                 overflow: hidden;
                 isolation: isolate;
+                /* Keep content clear of the Dynamic Island / notch when run as an
+                   iOS PWA (apple-mobile-web-app-status-bar-style: black-translucent
+                   makes the status bar overlay the app). */
+                padding-top: env(safe-area-inset-top, 0px);
             }
 
             .screen {
                 flex: 1;
-                padding: 0 1em calc(8rem + env(safe-area-inset-bottom, 0px));
+                /* Horizontal insets keep content clear of the phone's rounded
+                   corners (especially in landscape). Bottom inset keeps it
+                   clear of the home indicator and the fixed bottom bar. */
+                padding:
+                    0
+                    calc(1em + env(safe-area-inset-right, 0px))
+                    calc(8rem + env(safe-area-inset-bottom, 0px))
+                    calc(1em + env(safe-area-inset-left, 0px));
                 animation: fadeIn 0.3s ease-out;
                 position: relative;
                 z-index: 1;
@@ -243,7 +254,12 @@ export class TarotApp extends LitElement {
                 margin: 0 auto;
                 background: rgba(10, 7, 20, 0.97);
                 border-top: 1px solid var(--border);
-                padding: 0.55em 0.8em calc(0.55em + env(safe-area-inset-bottom, 0px));
+                /* Respect rounded bottom corners and home-indicator on iOS PWA. */
+                padding:
+                    0.55em
+                    calc(0.8em + env(safe-area-inset-right, 0px))
+                    calc(0.55em + env(safe-area-inset-bottom, 0px))
+                    calc(0.8em + env(safe-area-inset-left, 0px));
                 display: grid;
                 grid-template-columns: 1fr auto 1fr;
                 align-items: center;
