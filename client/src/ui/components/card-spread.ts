@@ -4,6 +4,8 @@ import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import type { IProgressReporter } from '../../services/IProgressReporter.js';
 import './tarot-card.js';
+import './dictation-input.js';
+import type { DictationInput } from './dictation-input.js';
 
 // Major arcana names for random draw
 const MAJOR_ARCANA = [
@@ -136,37 +138,6 @@ export class CardSpread extends LitElement {
                 position: relative;
             }
 
-            .question-input-wrap {
-                position: relative;
-                width: 100%;
-            }
-
-            .question-input {
-                width: 100%;
-                box-sizing: border-box;
-                padding: 0.7em 3.2em 0.7em 0.8em;
-                background: var(--bg-card);
-                border: 1px solid var(--border);
-                border-radius: 8px;
-                color: var(--text);
-                font-family: var(--font-body);
-                font-size: 0.92em;
-                outline: none;
-                transition: border-color 0.2s, box-shadow 0.2s ease;
-                height: 2.8em;
-                line-height: 1.2;
-                white-space: nowrap;
-            }
-
-            .question-input:focus {
-                border-color: var(--gold-dim);
-                box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.08);
-            }
-
-            .question-input::placeholder {
-                color: var(--text-faint);
-            }
-
             .topic-chips {
                 display: flex;
                 flex-wrap: wrap;
@@ -216,41 +187,6 @@ export class CardSpread extends LitElement {
                 margin-bottom: 0.35em;
             }
 
-            .mic-btn {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 2.25em;
-                height: 2.25em;
-                border-radius: 999px;
-                border: 1px solid var(--border);
-                background: rgba(15, 9, 26, 0.88);
-                color: var(--gold);
-                cursor: pointer;
-                transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-                position: absolute;
-                top: 50%;
-                right: 0.45em;
-                transform: translateY(-50%);
-            }
-
-            .mic-btn:hover {
-                transform: translateY(-50%) translateY(-1px);
-                border-color: var(--gold-dim);
-            }
-
-            .mic-btn.listening {
-                background: rgba(201, 168, 76, 0.14);
-                border-color: var(--gold);
-                box-shadow: 0 0 0 5px rgba(201, 168, 76, 0.08);
-            }
-
-            .question-status {
-                color: var(--text-faint);
-                font-size: 0.75em;
-                min-height: 1.1em;
-            }
-
             /* Celtic cross layout: 3 rows */
             .cross-layout {
                 display: flex;
@@ -290,18 +226,13 @@ export class CardSpread extends LitElement {
 
     @property({ attribute: false }) services!: AppServices;
     @property({ type: Number }) version = 0;
-    @query('.question-input') private _questionInput?: HTMLInputElement;
+    @query('dictation-input') private _dictationEl?: DictationInput;
 
     @state() private _dealtCards: Array<{ name: string; position: string; reversed: boolean }> = [];
     @state() private _question = '';
     @state() private _selectedTopic = '';
     @state() private _loading = false;
     @state() private _progressText = '';
-    @state() private _questionFocused = false;
-    @state() private _sttListening = false;
-    @state() private _sttStatus = '';
-
-    private _sttBaseQuestion = '';
 
     private get _spreadSize(): number {
         return this.services?.gameContext?.spreadType ?? 3;
@@ -365,47 +296,24 @@ export class CardSpread extends LitElement {
                 ` : html`
                     <div class="question-section stack gap-sm">
                         <div class="question-label">Ask Your Question</div>
-                        <div class="question-input-wrap">
-                        <input
-                            class="question-input"
-                            placeholder="Ask a question (optional)..."
+                        <dictation-input
+                            .sttService=${this.services.sttService}
+                            .sttLang=${this._sttLang}
                             .value=${this._question}
-                            @focus=${() => {
-                                this._questionFocused = true;
-                                if (this.services.sttService.isAvailable() && !this._sttStatus) {
-                                    this._sttStatus = 'Tap the microphone to dictate your question.';
-                                }
+                            .placeholder=${'Ask a question (optional)...'}
+                            idle-hint="Tap the microphone to dictate your question."
+                            @input-change=${(e: CustomEvent) => {
+                                this._question = e.detail.value;
                             }}
-                            @blur=${() => {
-                                this._questionFocused = false;
-                                if (!this._sttListening && this._sttStatus === 'Tap the microphone to dictate your question.') {
-                                    this._sttStatus = '';
-                                }
-                            }}
-                            @input=${(e: InputEvent) => {
-                                this._question = (e.target as HTMLInputElement).value;
-                            }}
-                        />
-                        ${(this._questionFocused || this._sttListening) && this.services.sttService.isAvailable() ? html`
-                            <button
-                                class="mic-btn ${this._sttListening ? 'listening' : ''}"
-                                title=${this._sttListening ? 'Stop dictation' : 'Speak your question'}
-                                @click=${this._toggleQuestionDictation}
-                            >${this._sttListening ? '■' : '🎙'}</button>
-                        ` : ''}
-                        </div>
-                        <div class="question-status">${this._sttStatus}</div>
+                            @submit=${() => this._fetchReading()}
+                        ></dictation-input>
 
                         <div class="topic-chips">
                             ${(['Love', 'Career', 'Health', 'Spirit', 'Finance', 'Change'] as const).map(t => html`
                                 <button
                                     class="topic-chip ${this._selectedTopic === t ? 'selected' : ''}"
                                     @click=${() => {
-                                        if (this._sttListening) {
-                                            this.services.sttService.stop();
-                                            this._sttListening = false;
-                                            this._sttStatus = '';
-                                        }
+                                        this._dictationEl?.stopDictation();
                                         this._selectedTopic = this._selectedTopic === t ? '' : t;
                                     }}
                                 >${t}</button>
@@ -524,14 +432,19 @@ export class CardSpread extends LitElement {
         return available[Math.floor(Math.random() * available.length)];
     }
 
+    private get _sttLang(): string {
+        return this.services.config.languages.find(
+            entry => entry.code === this.services.userContext.language,
+        )?.sttLang ?? 'en-US';
+    }
+
     private async _fetchReading(): Promise<void> {
         if (!this.services || this._loading) return;
 
-        if (this._sttListening) {
-            this.services.sttService.stop();
-            this._sttListening = false;
-            this._sttStatus = '';
-        }
+        // Always release the mic before network work starts.
+        // dictation-input has its own teardown, but this covers the case where
+        // _fetchReading is invoked by "Get Reading" button while dictation is active.
+        this._dictationEl?.stopDictation();
 
         this._loading = true;
         this.dispatchEvent(new CustomEvent('loading', { detail: true }));
@@ -589,65 +502,6 @@ export class CardSpread extends LitElement {
         }
 
         return window.innerWidth <= 430 && window.innerHeight >= window.innerWidth;
-    }
-
-    private _toggleQuestionDictation(): void {
-        if (!this.services.sttService.isAvailable()) {
-            this._sttStatus = 'Speech input is not available in this browser.';
-            return;
-        }
-
-        if (this._sttListening) {
-            this.services.sttService.stop();
-            return;
-        }
-
-        const language = this.services.config.languages.find(
-            entry => entry.code === this.services.userContext.language,
-        )?.sttLang ?? 'en-US';
-
-        this._sttBaseQuestion = this._question.trim();
-        this._sttStatus = 'Listening...';
-
-        this.services.sttService.start(language, {
-            onStart: () => {
-                this._sttListening = true;
-            },
-            onInterim: (transcript) => {
-                const clean = transcript.trim();
-                this._question = this._mergeTranscript(clean);
-                this._sttStatus = clean ? `Listening: ${clean}` : 'Listening...';
-            },
-            onResult: (transcript) => {
-                const clean = transcript.trim();
-                this._question = this._mergeTranscript(clean);
-                this._sttListening = false;
-                this._sttStatus = clean ? 'Question captured.' : '';
-                this.services.sttService.stop();
-                this.updateComplete.then(() => {
-                    this._questionInput?.focus();
-                });
-            },
-            onEnd: () => {
-                this._sttListening = false;
-                if (this._sttStatus.startsWith('Listening')) {
-                    this._sttStatus = '';
-                }
-            },
-            onError: (error) => {
-                this._sttListening = false;
-                this._sttStatus = `Speech input error: ${error}`;
-                this.services.sttService.stop();
-            },
-        });
-    }
-
-    private _mergeTranscript(transcript: string): string {
-        if (!transcript) {
-            return this._sttBaseQuestion;
-        }
-
-        return [this._sttBaseQuestion, transcript].filter(Boolean).join(this._sttBaseQuestion ? ' ' : '');
     }
 
 }

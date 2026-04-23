@@ -4,7 +4,8 @@
       "mcp__Claude_Preview__preview_start",
       "mcp__Claude_in_Chrome__tabs_context_mcp",
       "mcp__Claude_in_Chrome__navigate",
-      "Bash(python -m http.server 8765)"
+      "Bash(python -m http.server 8765)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

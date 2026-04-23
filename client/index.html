@@ -52,6 +52,10 @@
             margin: 0 auto;
             min-height: 100dvh;
             position: relative;
+            /* Paint the app background into the iOS safe areas so they don't
+               appear as white strips around the Dynamic Island / home indicator
+               when run as a PWA with black-translucent status bar. */
+            background: var(--bg);
         }
 
         button,
