@@ -170,7 +170,7 @@ export class DashboardPanelLite extends LitElement {
             return html`<div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Location</th><th>Activity</th><th>Questions</th></tr></thead><tbody>
                 ${sessions.map((s: any) => html`<tr>
                     <td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button><div class="subtle">${this.time(s.createdAt)}</div></td>
-                    <td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.short(s.uid)}</button></td>
+                    <td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid)}</button></td>
                     <td>${s.city || s.country ? html`<button class="linkish" @click=${() => this.openDetail('location', this.locationKey(s.city, s.country))}>${[s.city, s.country].filter(Boolean).join(', ')}</button>` : '-'}</td>
                     <td>${s.gameCount} readings · ${s.device ?? 'unknown'} · v${s.appVersion}</td>
                     <td>${s.questionCount}</td>
@@ -182,7 +182,10 @@ export class DashboardPanelLite extends LitElement {
             return html`<div class="panel"><div class="section">Locations</div><div class="table-wrap"><table><thead><tr><th>Location</th><th>Users</th><th>Sessions</th><th>Readings</th><th>Last Played</th></tr></thead><tbody>
                 ${locations.map((l: any) => html`<tr>
                     <td><button class="linkish" @click=${() => this.openDetail('location', l.key)}>${[l.city, l.country].filter(Boolean).join(', ')}</button></td>
-                    <td>${l.userCount}</td><td>${l.sessionCount}</td><td>${l.gameCount}</td><td>${this.time(l.lastPlayedAt)}</td>
+                    <td><button class="linkish" @click=${() => this.openDetail('location', l.key)}>${l.userCount}</button></td>
+                    <td><button class="linkish" @click=${() => this.openDetail('location', l.key)}>${l.sessionCount}</button></td>
+                    <td><button class="linkish" @click=${() => this.openDetail('location', l.key)}>${l.gameCount}</button></td>
+                    <td>${this.time(l.lastPlayedAt)}</td>
                 </tr>`)}
             </tbody></table></div></div>`;
         }
@@ -191,7 +194,7 @@ export class DashboardPanelLite extends LitElement {
             ${readings.map((g: any) => html`<tr>
                 <td>${this.time(g.createdAt)}</td>
                 <td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.spreadType}-card</button></td>
-                <td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.short(g.uid)}</button></td>
+                <td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid)}</button></td>
                 <td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td>
                 <td>${g.city || g.country ? html`<button class="linkish" @click=${() => this.openDetail('location', this.locationKey(g.city, g.country))}>${[g.city, g.country].filter(Boolean).join(', ')}</button>` : '-'}</td>
                 <td>${g.question ?? '-'}</td>
@@ -218,10 +221,11 @@ export class DashboardPanelLite extends LitElement {
         }
         if (this.detailKind === 'reading') {
             const game = this.getObj(d, 'game')!;
+            const readingUser = this.getObj(d, 'user');
             return html`${this.crumb('Reading', this.short(String(game.gameId ?? '')))}
                 <div class="panel"><div class="section">Reading Detail</div><div class="grid">
                     <span class="k">Reading ID</span><span class="v">${game.gameId}</span>
-                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(game.uid))}>${this.short(String(game.uid))}</button></span>
+                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(game.uid))}>${this.userLabel(readingUser?.name, String(game.uid))}</button></span>
                     <span class="k">Session</span><span class="v"><button class="linkish" @click=${() => this.openDetail('session', String(game.sessionId))}>${this.short(String(game.sessionId))}</button></span>
                     <span class="k">Location</span><span class="v">${[game.location?.city, game.location?.country].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Question</span><span class="v">${game.question ?? '-'}</span>
@@ -230,9 +234,10 @@ export class DashboardPanelLite extends LitElement {
         }
         if (this.detailKind === 'session') {
             const session = this.getObj(d, 'session')!;
+            const sessionUser = this.getObj(d, 'user');
             return html`${this.crumb('Session', this.short(String(session.sessionId ?? '')))}
                 <div class="panel"><div class="section">Session Detail</div><div class="grid">
-                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(session.uid))}>${this.short(String(session.uid))}</button></span>
+                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(session.uid))}>${this.userLabel(sessionUser?.name, String(session.uid))}</button></span>
                     <span class="k">Location</span><span class="v">${[session.city, session.country].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Timezone</span><span class="v">${session.timezone ?? '-'}</span>
                     <span class="k">Device</span><span class="v">${session.device ?? '-'} · v${session.appVersion}</span>
@@ -248,8 +253,8 @@ export class DashboardPanelLite extends LitElement {
         const location = this.getObj(d, 'location')!;
         return html`${this.crumb('Location', [location.city, location.country].filter(Boolean).join(', '))}
             <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${u.name ?? this.short(u.uid)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${this.traitEntries(u.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div></details>`)}</div></div>
-            <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Readings</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.short(s.uid)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
-            <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.short(g.uid)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
+            <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Readings</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
+            <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
     }
 
     private stat(value: unknown, scopeOrLabel: unknown, maybeLabel?: string) {
@@ -319,6 +324,7 @@ export class DashboardPanelLite extends LitElement {
     }
 
     private short(value: string): string { return value.length <= 10 ? value : `${value.slice(0, 8)}...`; }
+    private userLabel(name: string | null | undefined, uid: string): string { return name ? `${name} (${this.short(uid)})` : this.short(uid); }
     private time(iso: string): string { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; }
     private locationKey(city: string | null, country: string | null): string { return encodeURIComponent(`${city ?? ''}|${country ?? ''}`); }
     private prettyLocation(key: string): string { return decodeURIComponent(key).replace('|', ', '); }
