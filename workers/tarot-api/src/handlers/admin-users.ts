@@ -233,6 +233,8 @@ export async function handleAdminLocationDetail(request: Request, env: Env, loca
             }))
             .sort((a, b) => b.totalReadings - a.totalReadings);
 
+        const nameByUid = new Map(allUsers.map(user => [user.uid, user.name]));
+
         return Response.json({
             location: {
                 key: buildLocationKey(target.city, target.country),
@@ -241,9 +243,9 @@ export async function handleAdminLocationDetail(request: Request, env: Env, loca
             },
             sessions: sessions.map(session => {
                 const sessionGames = games.filter(game => game.sessionId === session.sessionId);
-                return summarizeSession(session, sessionGames, []);
+                return { ...summarizeSession(session, sessionGames, []), userName: nameByUid.get(session.uid) ?? null };
             }),
-            games: games.map(summarizeGame),
+            games: games.map(game => ({ ...summarizeGame(game), userName: nameByUid.get(game.uid) ?? null })),
             users,
         });
     } catch (err) {

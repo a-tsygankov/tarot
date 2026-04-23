@@ -53,6 +53,7 @@ export interface DashboardResponse {
     sessions: Array<{
         sessionId: string;
         uid: string;
+        userName: string | null;
         createdAt: string;
         city: string | null;
         country: string | null;
@@ -302,6 +303,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                 return {
                     sessionId: session.sessionId,
                     uid: session.uid,
+                    userName: userNameByUid.get(session.uid) ?? null,
                     createdAt: session.createdAt,
                     city: session.city,
                     country: session.country,
