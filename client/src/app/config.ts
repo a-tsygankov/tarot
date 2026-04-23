@@ -27,7 +27,7 @@ export const CONFIG = {
         { code: 'AZE', label: 'Azərbaycan', sttLang: 'az-AZ', piperVoiceId: null, elevenLabsVoiceId: null },
     ] satisfies LanguageConfig[],
 
-    tones: ['Mystical', 'Ironic', 'Serious', 'Gentle'] as const,
+    tones: ['Mystical', 'Ironic', 'Normal'] as const,
 
     themes: [
         { id: 'dusk',      label: 'Dusk' },
