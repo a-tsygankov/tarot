@@ -20,6 +20,7 @@ export interface DashboardResponse {
     recentGames: Array<{
         gameId: string;
         uid: string;
+        userName: string | null;
         sessionId: string;
         spreadType: number;
         question: string | null;
@@ -138,6 +139,11 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
         ]);
 
+        const userNameByUid = new Map<string, string | null>();
+        for (const user of allUsers) {
+            userNameByUid.set(user.uid, user.name);
+        }
+
         // Fetch recent games (last 20)
         const recentGamesPromise = (async () => {
             const games: DashboardResponse['recentGames'] = [];
@@ -153,9 +159,11 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                         if (!gObj) continue;
                         try {
                             const g = await gObj.json() as Record<string, unknown>;
+                            const uid = g.uid as string;
                             games.push({
                                 gameId: g.gameId as string,
-                                uid: g.uid as string,
+                                uid,
+                                userName: userNameByUid.get(uid) ?? null,
                                 sessionId: g.sessionId as string,
                                 spreadType: g.spreadType as number,
                                 question: g.question as string | null,

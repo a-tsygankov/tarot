@@ -122,6 +122,9 @@ export class ApiService implements IApiService {
             screenHeight: this.userContext.deviceInfo.screenHeight,
             device: this.userContext.deviceInfo.summary,
             deviceInfo: this.userContext.deviceInfo,
+            language: this.userContext.language,
+            tone: this.userContext.tone,
+            name: this.userContext.name,
         };
 
         try {

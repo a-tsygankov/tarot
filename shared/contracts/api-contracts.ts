@@ -77,6 +77,9 @@ export interface SessionRequest {
     screenHeight?: number;
     device?: string;
     deviceInfo?: DeviceInfo;
+    language?: string;
+    tone?: string;
+    name?: string | null;
 }
 
 // ── Event ────────────────────────────────────────────────────────────

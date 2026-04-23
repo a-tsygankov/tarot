@@ -45,8 +45,16 @@ export async function handleSession(request: Request, env: Env, deps: SessionDep
 
         await r2PutJson(env.R2, `entities/sessions/${body.sessionId}.json`, sessionDoc);
 
-        // Upsert user via repository
-        await deps.users.upsert(body.uid, { country, city });
+        // Upsert user via repository.
+        // Only pass name when the client actually has one — passing null would clear a previously
+        // stored name (the repo treats `!== undefined` as an explicit write).
+        await deps.users.upsert(body.uid, {
+            country,
+            city,
+            language: body.language,
+            tone: body.tone,
+            ...(body.name ? { name: body.name } : {}),
+        });
 
         // Analytics (best-effort)
         deps.analytics.incrementDaily(date, { sessions: 1, uniqueUsers: 1 }).catch(() => {});

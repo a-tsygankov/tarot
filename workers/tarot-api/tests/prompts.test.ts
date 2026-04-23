@@ -95,8 +95,8 @@ describe('buildFollowUpPrompt', () => {
     });
 
     it('applies tone', () => {
-        const prompt = buildFollowUpPrompt('No details.', '3-card.', 'Q?', 'Gentle', 'ENG');
-        expect(prompt).toContain('warm, nurturing');
+        const prompt = buildFollowUpPrompt('No details.', '3-card.', null, null, 'Q?', 'Normal', 'ENG');
+        expect(prompt).toContain('grounded, everyday');
     });
 
     it('applies language', () => {
@@ -109,8 +109,7 @@ describe('PROMPTS constants', () => {
     it('has all required tone keys', () => {
         expect(PROMPTS.tones).toHaveProperty('Mystical');
         expect(PROMPTS.tones).toHaveProperty('Ironic');
-        expect(PROMPTS.tones).toHaveProperty('Serious');
-        expect(PROMPTS.tones).toHaveProperty('Gentle');
+        expect(PROMPTS.tones).toHaveProperty('Normal');
     });
 
     it('has all required language keys', () => {
