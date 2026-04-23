@@ -421,6 +421,13 @@ export class TarotApp extends LitElement {
                 margin: 0 0.1em;
             }
 
+            .install-help-note {
+                margin-top: 0.7em;
+                color: var(--text-dim);
+                font-size: 0.82em;
+                line-height: 1.45;
+            }
+
             .install-help-actions {
                 display: flex;
                 justify-content: flex-end;
@@ -798,34 +805,78 @@ export class TarotApp extends LitElement {
 
     private _renderInstallHelp() {
         const ua = navigator.userAgent ?? '';
-        const isIos = /iPhone|iPad|iPod/i.test(ua)
-            || ((navigator.platform ?? '') === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const platform = navigator.platform ?? '';
+        const isIpad = /iPad/i.test(ua) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isIphone = /iPhone|iPod/i.test(ua);
+        const isIos = isIphone || isIpad;
+        const isAndroid = /Android/i.test(ua);
+        const isFirefox = /Firefox/i.test(ua);
+        const isSamsung = /SamsungBrowser/i.test(ua);
+        const shareIcon = html`
+            <svg class="ios-share-icon" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v12"/>
+                <path d="M8 7l4-4 4 4"/>
+                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>
+            </svg>
+        `;
+
+        let body;
+        if (isIos) {
+            const sharePosition = isIpad ? 'top-right corner of Safari' : 'bottom of Safari';
+            body = html`
+                <ol>
+                    <li>Tap the ${shareIcon} <b>Share</b> button at the ${sharePosition}.</li>
+                    <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+                    <li>Tap <b>Add</b> in the top-right corner.</li>
+                </ol>
+                <div class="install-help-note">
+                    Use Safari for this — Chrome and other browsers on iOS don't support adding to the home screen.
+                </div>
+            `;
+        } else if (isAndroid && isFirefox) {
+            body = html`
+                <ol>
+                    <li>Tap the menu button <b>⋮</b> in the top-right of Firefox.</li>
+                    <li>Tap <b>Install</b> (or <b>Add to Home screen</b>).</li>
+                    <li>Confirm to place the Tarot icon on your home screen.</li>
+                </ol>
+            `;
+        } else if (isAndroid && isSamsung) {
+            body = html`
+                <ol>
+                    <li>Tap the menu button <b>≡</b> at the bottom of Samsung Internet.</li>
+                    <li>Tap <b>Add page to</b> → <b>Home screen</b>.</li>
+                    <li>Confirm to place the Tarot icon on your home screen.</li>
+                </ol>
+            `;
+        } else if (isAndroid) {
+            body = html`
+                <ol>
+                    <li>Tap the menu button <b>⋮</b> in the top-right of Chrome.</li>
+                    <li>Tap <b>Install app</b> (or <b>Add to Home screen</b>).</li>
+                    <li>Tap <b>Install</b> in the dialog that appears.</li>
+                </ol>
+                <div class="install-help-note">
+                    If you don't see <b>Install app</b>, your browser may have already dismissed the install prompt for this site. Reload the page and try again.
+                </div>
+            `;
+        } else {
+            body = html`
+                <ol>
+                    <li>Open your browser menu (usually <b>⋮</b> or <b>≡</b>).</li>
+                    <li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li>
+                    <li>Confirm to place the Tarot icon on your home screen.</li>
+                </ol>
+            `;
+        }
+
         return html`
             <div class="install-help" @click=${(e: Event) => { if (e.target === e.currentTarget) this._closeInstallHelp(); }}>
                 <div class="install-help-card">
                     <h3>Add Tarot to your home screen</h3>
-                    ${isIos ? html`
-                        <ol>
-                            <li>Tap the
-                                <svg class="ios-share-icon" viewBox="0 0 24 24" fill="none"
-                                    stroke="currentColor" stroke-width="1.8"
-                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M12 3v12"/>
-                                    <path d="M8 7l4-4 4 4"/>
-                                    <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>
-                                </svg>
-                                Share button at the bottom of Safari.
-                            </li>
-                            <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
-                            <li>Tap <b>Add</b> in the top-right corner.</li>
-                        </ol>
-                    ` : html`
-                        <ol>
-                            <li>Open your browser menu (usually <b>⋮</b> in the top-right).</li>
-                            <li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li>
-                            <li>Confirm to place the Tarot icon on your home screen.</li>
-                        </ol>
-                    `}
+                    ${body}
                     <div class="install-help-actions">
                         <button class="btn btn-ghost" @click=${this._closeInstallHelp}>Got it</button>
                     </div>
