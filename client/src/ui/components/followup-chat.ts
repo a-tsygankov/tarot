@@ -151,13 +151,6 @@ export class FollowupChat extends LitElement {
         return Boolean(game?.canAddClarification && this._canAsk);
     }
 
-    private get _lastUserQuestion(): string | null {
-        for (let i = this._messages.length - 1; i >= 0; i--) {
-            if (this._messages[i].role === 'user') return this._messages[i].text;
-        }
-        return null;
-    }
-
     private get _sttLang(): string {
         return this.services.config.languages.find(
             l => l.code === this.services.userContext.language,
@@ -272,6 +265,12 @@ export class FollowupChat extends LitElement {
         }
     }
 
+    /**
+     * Drawing a clarification card regenerates the whole reading (same as the
+     * reading screen) rather than posting a plain chat answer, then surfaces the
+     * refined reading as the Oracle's reply. The updated reading is stored on the
+     * game, so the Reading screen reflects it too.
+     */
     private async _revealClarification(): Promise<void> {
         const game = this.services?.gameContext;
         if (!game || this._loading || !game.canAddClarification) return;
@@ -283,23 +282,21 @@ export class FollowupChat extends LitElement {
         if (!card) return;
         void this.services.audioCueService?.playCardReveal?.();
 
-        const question = this._lastUserQuestion
-            ?? 'Please give a clearer, more decisive answer using the clarification card(s).';
-
         this._loading = true;
         this.dispatchEvent(new CustomEvent('loading', { detail: true }));
         this._scrollToBottom();
 
         try {
-            const response = await this.services.apiService.askFollowUpAsync(game, question);
-            game.addQA(response.questionDigest, response.answerDigest);
+            await this.services.audioCueService?.startOracleWaiting?.();
+            const response = await this.services.apiService.fetchReadingAsync(game);
+            game.applyReading(response);
             if (response.userContextDelta) {
                 this.services.userContext.applyAiUpdate(response.userContextDelta);
             }
             this.services.userContext.applyUserTraits(response.userTraits);
             this._messages = [...this._messages, {
                 role: 'oracle',
-                text: response.answer,
+                text: response.reading.overall || 'The cards reveal more.',
                 timestamp: Date.now(),
             }];
         } catch (err) {
@@ -309,6 +306,7 @@ export class FollowupChat extends LitElement {
                 timestamp: Date.now(),
             }];
         } finally {
+            await this.services.audioCueService?.stopOracleWaiting?.();
             this._loading = false;
             this.dispatchEvent(new CustomEvent('loading', { detail: false }));
             this._scrollToBottom();
