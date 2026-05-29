@@ -22,7 +22,8 @@ export class TarotCard extends LitElement {
             .card-shell {
                 position: relative;
                 width: var(--card-width, 110px);
-                height: var(--card-height, 180px);
+                display: flex;
+                flex-direction: column;
                 border-radius: 10px;
                 transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
                 user-select: none;
@@ -40,7 +41,8 @@ export class TarotCard extends LitElement {
 
             .card-frame {
                 width: 100%;
-                height: 100%;
+                height: var(--card-height, 180px);
+                flex: 0 0 auto;
                 border-radius: 10px;
                 overflow: hidden;
                 border: 1px solid var(--border);

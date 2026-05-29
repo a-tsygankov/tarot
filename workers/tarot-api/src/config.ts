@@ -3,7 +3,7 @@
  */
 
 export const WORKER_CONFIG = {
-    version: '2.3.1',
+    version: '2.4.0',
     apiVersion: '2.0',
     supportedApiVersions: ['2.0'],
     minClientVersion: '2.0.0',
