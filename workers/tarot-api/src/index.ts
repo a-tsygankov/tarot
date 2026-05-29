@@ -11,6 +11,7 @@ import {
     handleAdminGameDetail,
     handleAdminLocationDetail,
     handleAdminSessionDetail,
+    handleAdminSetUserAlias,
     handleAdminUserDetail,
 } from './handlers/admin-users.js';
 import {
@@ -117,6 +118,9 @@ export default {
                     : Response.json({ valid: false, error: 'Invalid admin key' }, { status: 401 });
             } else if (path === '/api/admin/dashboard' && request.method === 'GET') {
                 response = await handleDashboard(request, env);
+            } else if (path.startsWith('/api/admin/user/') && path.endsWith('/alias') && request.method === 'POST') {
+                const uid = path.slice('/api/admin/user/'.length, -'/alias'.length);
+                response = await handleAdminSetUserAlias(request, env, uid);
             } else if (path.startsWith('/api/admin/user/') && request.method === 'GET') {
                 const uid = path.slice('/api/admin/user/'.length);
                 response = await handleAdminUserDetail(request, env, uid);

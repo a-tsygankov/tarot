@@ -27,6 +27,7 @@ export class R2GameRepository {
         sessionId: string;
         spreadType: number;
         cards: GameDocument['cards'];
+        clarificationCards?: GameDocument['cards'];
         question: string | null;
         topic: string | null;
         language: string;
@@ -50,6 +51,9 @@ export class R2GameRepository {
             reading: {},
             readingDigest: null,
             turnCount: 0,
+            ...(params.clarificationCards && params.clarificationCards.length > 0
+                ? { clarificationCards: params.clarificationCards }
+                : {}),
             ...(params.location ? { location: params.location } : {}),
             ...(params.originalRequest ? { originalRequest: params.originalRequest } : {}),
         };
@@ -61,12 +65,16 @@ export class R2GameRepository {
         gameId: string,
         reading: Record<string, unknown>,
         readingDigest: string,
+        clarificationCards?: GameDocument['cards'],
     ): Promise<void> {
         const doc = await this.getGame(gameId);
         if (!doc) throw new Error(`Game ${gameId} not found`);
         doc.reading = reading;
         doc.readingDigest = readingDigest;
         doc.turnCount += 1;
+        if (clarificationCards && clarificationCards.length > 0) {
+            doc.clarificationCards = clarificationCards;
+        }
         await r2PutJson(this.r2, this.gameKey(gameId), doc);
     }
 

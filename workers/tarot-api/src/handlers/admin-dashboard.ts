@@ -21,6 +21,7 @@ export interface DashboardResponse {
         gameId: string;
         uid: string;
         userName: string | null;
+        userAlias: string | null;
         sessionId: string;
         spreadType: number;
         question: string | null;
@@ -35,6 +36,7 @@ export interface DashboardResponse {
     users: Array<{
         uid: string;
         name: string | null;
+        alias: string | null;
         gender: string | null;
         birthdate: string | null;
         language: string;
@@ -42,6 +44,9 @@ export interface DashboardResponse {
         latestDevice: string | null;
         totalReadings: number;
         totalFollowUps: number;
+        readingsInPeriod: number;
+        questionsInPeriod: number;
+        followUpsInPeriod: number;
         lastSeenAt: string;
         lastCity: string | null;
         lastCountry: string | null;
@@ -54,6 +59,7 @@ export interface DashboardResponse {
         sessionId: string;
         uid: string;
         userName: string | null;
+        userAlias: string | null;
         createdAt: string;
         city: string | null;
         country: string | null;
@@ -62,6 +68,7 @@ export interface DashboardResponse {
         appVersion: string;
         gameCount: number;
         questionCount: number;
+        followUpCount: number;
         lastGameId: string | null;
     }>;
     locations: Array<{
@@ -120,12 +127,15 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         });
 
-        // Fetch active users for today
+        // Fetch active users for today.
+        // The active-users index stores a plain string[] of uids (legacy callers may
+        // have stored { uids }), so accept both shapes.
         const activeUsersPromise = (async () => {
             const obj = await env.R2.get(`indexes/active-users/${dates[0]}.json`);
             if (!obj) return 0;
             try {
-                const data = await obj.json() as { uids: string[] };
+                const data = await obj.json() as string[] | { uids?: string[] };
+                if (Array.isArray(data)) return data.length;
                 return data.uids?.length ?? 0;
             } catch {
                 return 0;
@@ -141,8 +151,10 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
         ]);
 
         const userNameByUid = new Map<string, string | null>();
+        const userAliasByUid = new Map<string, string | null>();
         for (const user of allUsers) {
             userNameByUid.set(user.uid, user.name);
+            userAliasByUid.set(user.uid, user.adminAlias ?? null);
         }
 
         // Fetch recent games (last 20)
@@ -153,8 +165,12 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                 const idx = await env.R2.get(`indexes/date-games/${date}.json`);
                 if (!idx) continue;
                 try {
-                    const data = await idx.json() as { gameIds: string[] };
-                    const gameIds = (data.gameIds ?? []).slice(-10);
+                    // date-games index stores [{ id, createdAt }]; accept legacy { gameIds } too.
+                    const data = await idx.json() as Array<{ id: string }> | { gameIds?: string[] };
+                    const ids = Array.isArray(data)
+                        ? data.map(e => e.id)
+                        : (data.gameIds ?? []);
+                    const gameIds = ids.slice(-10);
                     for (const gid of gameIds) {
                         const gObj = await env.R2.get(`entities/games/${gid}.json`);
                         if (!gObj) continue;
@@ -165,6 +181,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                                 gameId: g.gameId as string,
                                 uid,
                                 userName: userNameByUid.get(uid) ?? null,
+                                userAlias: userAliasByUid.get(uid) ?? null,
                                 sessionId: g.sessionId as string,
                                 spreadType: g.spreadType as number,
                                 question: g.question as string | null,
@@ -193,6 +210,22 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
         const scopeStart = dates[dates.length - 1];
         const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
         const scopedReadingTurns = allTurns.filter(turn => turn.turnType === 'reading' && isWithinScope(turn.createdAt));
+
+        // Follow-up turns within the period, aggregated by user and by session.
+        const sessionIdByGameId = new Map<string, string>();
+        for (const game of allGames) {
+            sessionIdByGameId.set(game.gameId, game.sessionId);
+        }
+        const scopedFollowUpTurns = allTurns.filter(turn => turn.turnType === 'followup' && isWithinScope(turn.createdAt));
+        const followUpsByUid = new Map<string, number>();
+        const followUpsBySession = new Map<string, number>();
+        for (const turn of scopedFollowUpTurns) {
+            followUpsByUid.set(turn.uid, (followUpsByUid.get(turn.uid) ?? 0) + 1);
+            const sid = sessionIdByGameId.get(turn.gameId);
+            if (sid) {
+                followUpsBySession.set(sid, (followUpsBySession.get(sid) ?? 0) + 1);
+            }
+        }
         const providerBreakdown: Record<string, number> = {};
         let totalReadingMs = 0;
         for (const turn of scopedReadingTurns) {
@@ -277,6 +310,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                 return {
                     uid: user.uid,
                     name: user.name,
+                    alias: user.adminAlias ?? null,
                     gender: user.gender,
                     birthdate: user.birthdate,
                     language: user.preferences.language,
@@ -284,6 +318,9 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                     latestDevice: userSessions[0]?.device ?? null,
                     totalReadings: user.stats.totalReadings,
                     totalFollowUps: user.stats.totalFollowUps,
+                    readingsInPeriod: userGames.length,
+                    questionsInPeriod: userGames.filter(game => !!game.question).length,
+                    followUpsInPeriod: followUpsByUid.get(user.uid) ?? 0,
                     lastSeenAt: user.lastSeenAt,
                     lastCity: user.locations.lastCity,
                     lastCountry: user.locations.lastCountry,
@@ -293,6 +330,8 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                     recentGameIds: userGames.slice(0, 5).map(game => game.gameId),
                 };
             })
+            // Hide users with no readings in the selected period.
+            .filter(user => user.readingsInPeriod > 0)
             .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
 
         const sessions = scopedSessions
@@ -304,6 +343,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                     sessionId: session.sessionId,
                     uid: session.uid,
                     userName: userNameByUid.get(session.uid) ?? null,
+                    userAlias: userAliasByUid.get(session.uid) ?? null,
                     createdAt: session.createdAt,
                     city: session.city,
                     country: session.country,
@@ -312,9 +352,12 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                     appVersion: session.appVersion,
                     gameCount: sessionGames.length,
                     questionCount: sessionGames.filter(game => !!game.question).length,
+                    followUpCount: followUpsBySession.get(session.sessionId) ?? 0,
                     lastGameId: sessionGames[0]?.gameId ?? null,
                 };
             })
+            // Hide sessions with no readings in the selected period.
+            .filter(session => session.gameCount > 0)
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         const locationMap = new Map<string, DashboardResponse['locations'][number]>();

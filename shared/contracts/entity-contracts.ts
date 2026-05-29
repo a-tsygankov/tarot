@@ -18,6 +18,8 @@ export interface UserDocument extends BaseDocument {
     firstSeenAt: string;
     lastSeenAt: string;
     name: string | null;
+    /** Admin-assigned label, independent of the user's own optional name. */
+    adminAlias?: string | null;
     gender: string | null;
     birthdate: string | null;
     userTraitsId: string | null;
@@ -73,6 +75,12 @@ export interface GameDocument extends BaseDocument {
     createdAt: string;
     spreadType: number;
     cards: Array<{
+        position: string;
+        name: string;
+        reversed: boolean;
+    }>;
+    /** Extra cards drawn to clarify a single-card reading (max 2). */
+    clarificationCards?: Array<{
         position: string;
         name: string;
         reversed: boolean;

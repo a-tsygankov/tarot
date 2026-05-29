@@ -2,7 +2,9 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
+import { drawRandomCard } from '../../app/deck.js';
 import './dictation-input.js';
+import './clarification-cards.js';
 import type { DictationInput } from './dictation-input.js';
 
 interface ChatMessage {
@@ -143,6 +145,19 @@ export class FollowupChat extends LitElement {
         return game.turnCount < (this.services.config.maxFollowUpsPerGame + 1);
     }
 
+    /** Clarification cards are offered for single-card games while turns remain. */
+    private get _showClarification(): boolean {
+        const game = this.services?.gameContext;
+        return Boolean(game?.canAddClarification && this._canAsk);
+    }
+
+    private get _lastUserQuestion(): string | null {
+        for (let i = this._messages.length - 1; i >= 0; i--) {
+            if (this._messages[i].role === 'user') return this._messages[i].text;
+        }
+        return null;
+    }
+
     private get _sttLang(): string {
         return this.services.config.languages.find(
             l => l.code === this.services.userContext.language,
@@ -174,6 +189,15 @@ export class FollowupChat extends LitElement {
                     </div>
                 ` : nothing}
             </div>
+
+            ${this._showClarification ? html`
+                <clarification-cards
+                    .services=${this.services}
+                    .cards=${this.services.gameContext.clarificationCards}
+                    .disabled=${this._loading}
+                    @reveal=${this._revealClarification}
+                ></clarification-cards>
+            ` : nothing}
 
             ${this._canAsk ? html`
                 <div class="input-bar">
@@ -239,6 +263,49 @@ export class FollowupChat extends LitElement {
             this._messages = [...this._messages, {
                 role: 'oracle',
                 text: `I'm sorry, I couldn't respond. ${err instanceof Error ? err.message : 'Please try again.'}`,
+                timestamp: Date.now(),
+            }];
+        } finally {
+            this._loading = false;
+            this.dispatchEvent(new CustomEvent('loading', { detail: false }));
+            this._scrollToBottom();
+        }
+    }
+
+    private async _revealClarification(): Promise<void> {
+        const game = this.services?.gameContext;
+        if (!game || this._loading || !game.canAddClarification) return;
+
+        const name = drawRandomCard(game.usedCardNames());
+        if (!name) return;
+        const reversed = this.services.userContext.noReversedCards ? false : Math.random() < 0.3;
+        const card = game.addClarificationCard(name, reversed);
+        if (!card) return;
+        void this.services.audioCueService?.playCardReveal?.();
+
+        const question = this._lastUserQuestion
+            ?? 'Please give a clearer, more decisive answer using the clarification card(s).';
+
+        this._loading = true;
+        this.dispatchEvent(new CustomEvent('loading', { detail: true }));
+        this._scrollToBottom();
+
+        try {
+            const response = await this.services.apiService.askFollowUpAsync(game, question);
+            game.addQA(response.questionDigest, response.answerDigest);
+            if (response.userContextDelta) {
+                this.services.userContext.applyAiUpdate(response.userContextDelta);
+            }
+            this.services.userContext.applyUserTraits(response.userTraits);
+            this._messages = [...this._messages, {
+                role: 'oracle',
+                text: response.answer,
+                timestamp: Date.now(),
+            }];
+        } catch (err) {
+            this._messages = [...this._messages, {
+                role: 'oracle',
+                text: `I couldn't refine the reading. ${err instanceof Error ? err.message : 'Please try again.'}`,
                 timestamp: Date.now(),
             }];
         } finally {
