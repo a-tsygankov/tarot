@@ -26,6 +26,13 @@ export class GameContext implements IGameContext {
     readingLang: string | null = null;
     readingTone: string | null = null;
     turnCount = 0;
+    /**
+     * Follow-up clarification cards drawn during the current turn. Reset when a
+     * new follow-up question is asked, so every question gets its own up-to-2
+     * budget. Cards still accumulate in followUpClarificationCards for the
+     * reading/prompt and duplicate-free draws.
+     */
+    private followUpClarificationThisTurn = 0;
 
     constructor(spreadType: 1 | 3 | 5) {
         this.gameId = crypto.randomUUID();
@@ -47,11 +54,19 @@ export class GameContext implements IGameContext {
     }
 
     /**
-     * Follow-ups carry their own clarification budget, independent of the reading
-     * screen, so drawing on the reading screen never blocks the follow-up.
+     * Follow-ups carry their own clarification budget that resets each turn, so
+     * every follow-up question can draw up to two clarification cards regardless
+     * of what earlier turns (or the reading screen) used.
      */
     get canAddFollowUpClarification(): boolean {
-        return this.followUpClarificationCards.length < MAX_CLARIFICATION_CARDS;
+        return this.followUpClarificationThisTurn < MAX_CLARIFICATION_CARDS;
+    }
+
+    /** Clarification cards drawn in the current follow-up turn (for display). */
+    currentTurnFollowUpClarifications(): CardDraw[] {
+        return this.followUpClarificationCards.slice(
+            this.followUpClarificationCards.length - this.followUpClarificationThisTurn,
+        );
     }
 
     /** Every clarification card, renumbered globally for prompts/API (Clarification 1..N). */
@@ -86,9 +101,10 @@ export class GameContext implements IGameContext {
      */
     addFollowUpClarificationCard(name: string, reversed: boolean): CardDraw | null {
         if (!this.canAddFollowUpClarification) return null;
-        const position = CLARIFICATION_POSITIONS[this.followUpClarificationCards.length];
+        const position = CLARIFICATION_POSITIONS[this.followUpClarificationThisTurn];
         const card: CardDraw = { position, name, reversed };
         this.followUpClarificationCards.push(card);
+        this.followUpClarificationThisTurn++;
         return card;
     }
 
@@ -113,6 +129,8 @@ export class GameContext implements IGameContext {
             { role: 'oracle', digest: answerDigest, ts: Date.now() },
         );
         this.turnCount++;
+        // New question → fresh clarification budget for the next turn.
+        this.followUpClarificationThisTurn = 0;
     }
 
     /** Is this a "long conversation" (triggers adaptive token budget)? */
@@ -191,6 +209,7 @@ export class GameContext implements IGameContext {
         this.cards = [];
         this.clarificationCards = [];
         this.followUpClarificationCards = [];
+        this.followUpClarificationThisTurn = 0;
         this.question = null;
         this.topic = null;
         this.reading = null;

@@ -145,10 +145,16 @@ export class FollowupChat extends LitElement {
         return game.turnCount < (this.services.config.maxFollowUpsPerGame + 1);
     }
 
-    /** Follow-ups offer their own clarification budget (any spread) while turns remain. */
+    /**
+     * Clarification cards are offered for every follow-up question (any spread)
+     * while turns remain: each question gets a fresh budget, and already-drawn
+     * cards for the current turn stay visible until the next question.
+     */
     private get _showClarification(): boolean {
         const game = this.services?.gameContext;
-        return Boolean(game?.canAddFollowUpClarification && this._canAsk);
+        if (!game || !this._canAsk) return false;
+        return game.canAddFollowUpClarification
+            || game.currentTurnFollowUpClarifications().length > 0;
     }
 
     private get _sttLang(): string {
@@ -186,7 +192,7 @@ export class FollowupChat extends LitElement {
             ${this._showClarification ? html`
                 <clarification-cards
                     .services=${this.services}
-                    .cards=${this.services.gameContext.followUpClarificationCards}
+                    .cards=${this.services.gameContext.currentTurnFollowUpClarifications()}
                     .disabled=${this._loading}
                     @reveal=${this._revealClarification}
                 ></clarification-cards>
