@@ -491,6 +491,9 @@ export class ReadingDisplay extends LitElement {
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             }
         } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                return;
+            }
             console.error('Reading image export failed:', error);
         }
     }
