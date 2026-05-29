@@ -36,9 +36,13 @@ export class GameContext implements IGameContext {
         this.cards.push(card);
     }
 
-    /** Whether more clarification cards can be drawn for this game. */
+    /**
+     * Whether another clarification card can be drawn (slot available).
+     * Spread-type gating is left to each view: the reading screen offers clarification
+     * for single-card spreads only, while follow-ups offer it for any spread.
+     */
     get canAddClarification(): boolean {
-        return this.spreadType === 1 && this.clarificationCards.length < MAX_CLARIFICATION_CARDS;
+        return this.clarificationCards.length < MAX_CLARIFICATION_CARDS;
     }
 
     /** Names already in play (spread + clarification), for duplicate-free draws. */

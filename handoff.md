@@ -105,7 +105,11 @@ All tasks implemented on `dev-7`. Summary of what landed:
   into `session.ts` / `followup.ts`, with a `date-sessions` reindex path.
 
 ### Notes / follow-ups
-- Clarification is intentionally scoped to **single-card** spreads (matches "For a single card").
+- Clarification scope: the **reading screen** offers clarification for **single-card** spreads
+  only (matches "For a single card"); the **follow-up view** offers it for **any** spread
+  (1/3/5), so "same applies to any follow up questions" holds regardless of spread size.
+  `GameContext.canAddClarification` only gates on the 2-card limit; the spread-type gate lives
+  in each view (reading-display renders it for `spreadType === 1`; followup-chat for all).
 - Re-requesting a reading (clarification, or the pre-existing language/tone change path) reuses
   the same `gameId`, so it does not create extra game docs; per-user `stats.totalReadings` can
   still over-count re-requests (pre-existing behaviour, left as-is).
