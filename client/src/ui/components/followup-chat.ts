@@ -145,10 +145,10 @@ export class FollowupChat extends LitElement {
         return game.turnCount < (this.services.config.maxFollowUpsPerGame + 1);
     }
 
-    /** Clarification cards are offered for single-card games while turns remain. */
+    /** Follow-ups offer their own clarification budget (any spread) while turns remain. */
     private get _showClarification(): boolean {
         const game = this.services?.gameContext;
-        return Boolean(game?.canAddClarification && this._canAsk);
+        return Boolean(game?.canAddFollowUpClarification && this._canAsk);
     }
 
     private get _sttLang(): string {
@@ -186,7 +186,7 @@ export class FollowupChat extends LitElement {
             ${this._showClarification ? html`
                 <clarification-cards
                     .services=${this.services}
-                    .cards=${this.services.gameContext.clarificationCards}
+                    .cards=${this.services.gameContext.followUpClarificationCards}
                     .disabled=${this._loading}
                     @reveal=${this._revealClarification}
                 ></clarification-cards>
@@ -273,12 +273,12 @@ export class FollowupChat extends LitElement {
      */
     private async _revealClarification(): Promise<void> {
         const game = this.services?.gameContext;
-        if (!game || this._loading || !game.canAddClarification) return;
+        if (!game || this._loading || !game.canAddFollowUpClarification) return;
 
         const name = drawRandomCard(game.usedCardNames());
         if (!name) return;
         const reversed = this.services.userContext.noReversedCards ? false : Math.random() < 0.3;
-        const card = game.addClarificationCard(name, reversed);
+        const card = game.addFollowUpClarificationCard(name, reversed);
         if (!card) return;
         void this.services.audioCueService?.playCardReveal?.();
 

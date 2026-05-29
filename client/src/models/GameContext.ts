@@ -17,6 +17,7 @@ export class GameContext implements IGameContext {
     spreadType: 1 | 3 | 5;
     cards: CardDraw[] = [];
     clarificationCards: CardDraw[] = [];
+    followUpClarificationCards: CardDraw[] = [];
     question: string | null = null;
     topic: string | null = null;
     reading: ReadingResult | null = null;
@@ -37,17 +38,34 @@ export class GameContext implements IGameContext {
     }
 
     /**
-     * Whether another clarification card can be drawn (slot available).
-     * Spread-type gating is left to each view: the reading screen offers clarification
-     * for single-card spreads only, while follow-ups offer it for any spread.
+     * Whether another clarification card can be drawn on the reading screen.
+     * Spread-type gating is left to the view: the reading screen offers clarification
+     * for single-card spreads only.
      */
     get canAddClarification(): boolean {
         return this.clarificationCards.length < MAX_CLARIFICATION_CARDS;
     }
 
-    /** Names already in play (spread + clarification), for duplicate-free draws. */
+    /**
+     * Follow-ups carry their own clarification budget, independent of the reading
+     * screen, so drawing on the reading screen never blocks the follow-up.
+     */
+    get canAddFollowUpClarification(): boolean {
+        return this.followUpClarificationCards.length < MAX_CLARIFICATION_CARDS;
+    }
+
+    /** Every clarification card, renumbered globally for prompts/API (Clarification 1..N). */
+    allClarificationCards(): CardDraw[] {
+        return [...this.clarificationCards, ...this.followUpClarificationCards].map((card, i) => ({
+            ...card,
+            position: `Clarification ${i + 1}`,
+        }));
+    }
+
+    /** Names already in play (spread + all clarification), for duplicate-free draws. */
     usedCardNames(): string[] {
-        return [...this.cards, ...this.clarificationCards].map(c => c.name);
+        return [...this.cards, ...this.clarificationCards, ...this.followUpClarificationCards]
+            .map(c => c.name);
     }
 
     /**
@@ -59,6 +77,18 @@ export class GameContext implements IGameContext {
         const position = CLARIFICATION_POSITIONS[this.clarificationCards.length];
         const card: CardDraw = { position, name, reversed };
         this.clarificationCards.push(card);
+        return card;
+    }
+
+    /**
+     * Draw and append one follow-up clarification card (separate budget).
+     * Returns the new card, or null if no slot is available.
+     */
+    addFollowUpClarificationCard(name: string, reversed: boolean): CardDraw | null {
+        if (!this.canAddFollowUpClarification) return null;
+        const position = CLARIFICATION_POSITIONS[this.followUpClarificationCards.length];
+        const card: CardDraw = { position, name, reversed };
+        this.followUpClarificationCards.push(card);
         return card;
     }
 
@@ -102,8 +132,9 @@ export class GameContext implements IGameContext {
             ctx += 'READING SUMMARY: ' + this.readingDigest + '\n';
         }
 
-        if (this.clarificationCards.length > 0) {
-            ctx += 'CLARIFICATION CARDS: ' + this.clarificationCards.map(c =>
+        const allClarification = this.allClarificationCards();
+        if (allClarification.length > 0) {
+            ctx += 'CLARIFICATION CARDS: ' + allClarification.map(c =>
                 `${c.position}: ${c.name}${c.reversed ? ' (Rev)' : ''}`
             ).join(', ') + '\n';
         }
@@ -125,7 +156,7 @@ export class GameContext implements IGameContext {
             gameId: this.gameId,
             spreadType: this.spreadType,
             cards,
-            clarificationCards: this.getCardsForOutput(this.clarificationCards, options),
+            clarificationCards: this.getCardsForOutput(this.allClarificationCards(), options),
             question: this.question,
             topic: this.topic,
             readingDigest: this.readingDigest,
@@ -147,6 +178,10 @@ export class GameContext implements IGameContext {
             ...card,
             reversed: false,
         }));
+        this.followUpClarificationCards = this.followUpClarificationCards.map(card => ({
+            ...card,
+            reversed: false,
+        }));
     }
 
     /** Reset for new game. */
@@ -155,6 +190,7 @@ export class GameContext implements IGameContext {
         this.spreadType = spreadType;
         this.cards = [];
         this.clarificationCards = [];
+        this.followUpClarificationCards = [];
         this.question = null;
         this.topic = null;
         this.reading = null;
