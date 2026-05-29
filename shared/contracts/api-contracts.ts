@@ -77,6 +77,9 @@ export interface SessionRequest {
     screenHeight?: number;
     device?: string;
     deviceInfo?: DeviceInfo;
+    language?: string;
+    tone?: string;
+    name?: string | null;
 }
 
 // ── Event ────────────────────────────────────────────────────────────
@@ -123,6 +126,8 @@ export interface GameContextPayload {
     readingDigest: string | null;
     qaDigests: Array<{ role: 'user' | 'oracle'; digest: string }>;
     turnCount: number;
+    /** Extra cards drawn to clarify a single-card reading or follow-up (max 2). */
+    clarificationCards?: CardDraw[];
 }
 
 export interface CardDraw {

@@ -153,6 +153,8 @@ export async function handleReindex(request: Request, env: Env): Promise<Respons
             return await reindexDateGames(env.R2);
         } else if (type === 'active-users') {
             return await reindexActiveUsers(env.R2);
+        } else if (type === 'date-sessions') {
+            return await reindexDateSessions(env.R2);
         }
 
         return Response.json({ error: `Unknown index type: ${type}` }, { status: 400 });
@@ -241,6 +243,32 @@ async function reindexActiveUsers(r2: R2Bucket): Promise<Response> {
     }
 
     return Response.json({ ok: true, type: 'active-users', datesIndexed: written });
+}
+
+async function reindexDateSessions(r2: R2Bucket): Promise<Response> {
+    const index = new Map<string, Array<{ id: string; createdAt: string }>>();
+
+    let cursor: string | undefined;
+    do {
+        const batch = await r2.list({ prefix: 'entities/sessions/', cursor, limit: 1000 });
+        for (const obj of batch.objects) {
+            const data = await r2.get(obj.key);
+            if (!data) continue;
+            const session = await data.json() as { sessionId: string; createdAt: string };
+            const date = session.createdAt.slice(0, 10);
+            if (!index.has(date)) index.set(date, []);
+            index.get(date)!.push({ id: session.sessionId, createdAt: session.createdAt });
+        }
+        cursor = batch.truncated ? batch.cursor : undefined;
+    } while (cursor);
+
+    let written = 0;
+    for (const [date, entries] of index) {
+        await r2.put(`indexes/date-sessions/${date}.json`, JSON.stringify(entries));
+        written++;
+    }
+
+    return Response.json({ ok: true, type: 'date-sessions', datesIndexed: written });
 }
 
 // ── Auth helper ─────────────────────────────────────────────────────

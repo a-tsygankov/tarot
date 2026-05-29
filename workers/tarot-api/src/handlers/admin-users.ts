@@ -1,5 +1,6 @@
 import type { Env } from '../env.js';
 import type { GameDocument, SessionDocument, TurnDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
+import { R2UserRepository } from '../repositories/user-repository.js';
 import {
     buildLocationKey,
     listDocuments,
@@ -10,6 +11,38 @@ import {
     summarizeGame,
     summarizeSession,
 } from './admin-helpers.js';
+
+/**
+ * POST /api/admin/user/:uid/alias  { alias: string | null }
+ * Sets or clears the admin-assigned alias for a user.
+ */
+export async function handleAdminSetUserAlias(request: Request, env: Env, uidFragment: string): Promise<Response> {
+    const unauthorized = requireAdmin(request, env);
+    if (unauthorized) {
+        return unauthorized;
+    }
+
+    try {
+        const uid = await resolveUid(env.R2, uidFragment);
+        if (!uid) {
+            return Response.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        const body = await request.json().catch(() => ({})) as { alias?: string | null };
+        const alias = typeof body.alias === 'string' ? body.alias : null;
+
+        const users = new R2UserRepository(env.R2);
+        const updated = await users.setAlias(uid, alias);
+        if (!updated) {
+            return Response.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        return Response.json({ ok: true, uid, alias: updated.adminAlias ?? null });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json({ error: 'Failed to set alias', message }, { status: 500 });
+    }
+}
 
 /**
  * GET /api/admin/user/:uid
@@ -129,6 +162,7 @@ export async function handleAdminGameDetail(request: Request, env: Env, gameId: 
             user: user ? {
                 uid: user.uid,
                 name: user.name,
+                alias: user.adminAlias ?? null,
                 lastCity: user.locations.lastCity,
                 lastCountry: user.locations.lastCountry,
                 userTraits: userTraits?.traits ?? {},
@@ -226,12 +260,16 @@ export async function handleAdminLocationDetail(request: Request, env: Env, loca
             .map(user => ({
                 uid: user.uid,
                 name: user.name,
+                alias: user.adminAlias ?? null,
                 lastCity: user.locations.lastCity,
                 lastCountry: user.locations.lastCountry,
                 totalReadings: user.stats.totalReadings,
                 userTraits: traitsByUserId.get(user.uid)?.traits ?? {},
             }))
             .sort((a, b) => b.totalReadings - a.totalReadings);
+
+        const nameByUid = new Map(allUsers.map(user => [user.uid, user.name]));
+        const aliasByUid = new Map(allUsers.map(user => [user.uid, user.adminAlias ?? null]));
 
         return Response.json({
             location: {
@@ -241,9 +279,17 @@ export async function handleAdminLocationDetail(request: Request, env: Env, loca
             },
             sessions: sessions.map(session => {
                 const sessionGames = games.filter(game => game.sessionId === session.sessionId);
-                return summarizeSession(session, sessionGames, []);
+                return {
+                    ...summarizeSession(session, sessionGames, []),
+                    userName: nameByUid.get(session.uid) ?? null,
+                    userAlias: aliasByUid.get(session.uid) ?? null,
+                };
             }),
-            games: games.map(summarizeGame),
+            games: games.map(game => ({
+                ...summarizeGame(game),
+                userName: nameByUid.get(game.uid) ?? null,
+                userAlias: aliasByUid.get(game.uid) ?? null,
+            })),
             users,
         });
     } catch (err) {

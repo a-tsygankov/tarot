@@ -3,22 +3,10 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import type { IProgressReporter } from '../../services/IProgressReporter.js';
+import { drawRandomCard } from '../../app/deck.js';
 import './tarot-card.js';
 import './dictation-input.js';
 import type { DictationInput } from './dictation-input.js';
-
-// Major arcana names for random draw
-const MAJOR_ARCANA = [
-    'The Fool', 'The Magician', 'The High Priestess', 'The Empress', 'The Emperor',
-    'The Hierophant', 'The Lovers', 'The Chariot', 'Strength', 'The Hermit',
-    'Wheel of Fortune', 'Justice', 'The Hanged Man', 'Death', 'Temperance',
-    'The Devil', 'The Tower', 'The Star', 'The Moon', 'The Sun',
-    'Judgement', 'The World',
-];
-
-const MINOR_SUITS = ['Wands', 'Cups', 'Swords', 'Pentacles'];
-const MINOR_RANKS = ['Ace', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
-    'Eight', 'Nine', 'Ten', 'Page', 'Knight', 'Queen', 'King'];
 
 const POSITION_LABELS: Record<number, string[]> = {
     1: ['Insight'],
@@ -418,18 +406,8 @@ export class CardSpread extends LitElement {
     }
 
     private _drawRandomCard(): string {
-        // Avoid duplicates
-        const used = new Set(this._dealtCards.map(c => c.name));
-
-        const allCards: string[] = [...MAJOR_ARCANA];
-        for (const suit of MINOR_SUITS) {
-            for (const rank of MINOR_RANKS) {
-                allCards.push(`${rank} of ${suit}`);
-            }
-        }
-
-        const available = allCards.filter(c => !used.has(c));
-        return available[Math.floor(Math.random() * available.length)];
+        const used = this._dealtCards.map(c => c.name);
+        return drawRandomCard(used) ?? 'The Fool';
     }
 
     private get _sttLang(): string {

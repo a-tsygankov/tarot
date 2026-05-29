@@ -8,6 +8,7 @@ export interface IGameContext {
     gameId: string;
     spreadType: 1 | 3 | 5;
     cards: CardDraw[];
+    clarificationCards: CardDraw[];
     question: string | null;
     topic: string | null;
     reading: ReadingResult | null;

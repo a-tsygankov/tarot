@@ -1,7 +1,7 @@
 import type { Env } from '../env.js';
 import type { FollowUpRequest } from '@shared/contracts/api-contracts.js';
 import { callAI } from '../services/ai-router.js';
-import { buildFollowUpPrompt } from '../prompts.js';
+import { buildFollowUpPrompt, PROMPTS } from '../prompts.js';
 import { parseFollowUpResponse } from '../services/response-parser.js';
 import { formatPromptField, formatTraitSummary, sanitizeTraitMap, sanitizeUserText } from '../services/prompt-safety.js';
 import type { R2GameRepository } from '../repositories/game-repository.js';
@@ -70,6 +70,13 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
                 gameCtx += `\n  ${qa.role.toUpperCase()}: ${qa.digest}`;
             }
         }
+        const clarificationCards = gameContext.clarificationCards ?? [];
+        if (clarificationCards.length > 0) {
+            const clarList = clarificationCards
+                .map(c => `${c.position}: ${c.name}${c.reversed ? ' (Rev)' : ''}`)
+                .join(', ');
+            gameCtx += `\nCLARIFICATION CARDS: ${clarList}\n${PROMPTS.clarificationInstruction}`;
+        }
 
         const prompt = buildFollowUpPrompt(
             userSummary,
@@ -135,6 +142,7 @@ export async function handleFollowUp(request: Request, env: Env, deps: FollowUpD
             deps.users.applyContextDelta(userContext.uid, normalizedDelta ?? {}).catch(() => {});
             deps.users.incrementStat(userContext.uid, 'totalFollowUps').catch(() => {});
             deps.indexWriter.trackActiveUser(date, userContext.uid).catch(() => {});
+            deps.indexWriter.addDateFollowUp(date, gameContext.gameId, gameContext.turnCount + 1).catch(() => {});
             deps.analytics.incrementDaily(date, {
                 followUps: 1,
                 language: userContext.language,

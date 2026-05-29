@@ -83,7 +83,7 @@ test('changing language or tone refreshes the reading in place', async ({ page }
 
     await page.locator('tarot-app .bottom-bar .btn.btn-ghost', { hasText: '⚙' }).click();
     await page.locator('settings-panel .option-btn', { hasText: 'Русский' }).click();
-    await page.locator('settings-panel .option-btn', { hasText: 'Gentle' }).click();
+    await page.locator('settings-panel .option-btn', { hasText: 'Normal' }).click();
 
     await expect(page.locator('reading-display .overall-text')).toContainText('Updated overall prediction.');
     await expect(page.locator('reading-display .card-reading-text')).toContainText('Updated description after settings change.');

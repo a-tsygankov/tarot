@@ -19,6 +19,12 @@ import type { DebugConsole } from './debug-console.js';
 
 export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard' | 'tts-debug';
 
+interface BeforeInstallPromptEvent extends Event {
+    readonly platforms: string[];
+    readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+    prompt(): Promise<void>;
+}
+
 /**
  * Root application shell — manages screen navigation and services.
  */
@@ -340,6 +346,87 @@ export class TarotApp extends LitElement {
                 color: var(--gold);
             }
 
+            .install-btn {
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--gold-dim);
+                width: 32px;
+                height: 32px;
+                padding: 0;
+                border-radius: 8px;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+            }
+
+            .install-btn:hover, .install-btn:focus-visible {
+                border-color: var(--gold);
+                color: var(--gold);
+                outline: none;
+            }
+
+            .install-btn svg {
+                width: 18px;
+                height: 18px;
+                display: block;
+            }
+
+            .install-help {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.6);
+                z-index: 110;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 1em;
+                animation: fadeIn 0.15s ease-out;
+            }
+
+            .install-help-card {
+                background: var(--bg-deep, #0d0a1a);
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                max-width: 360px;
+                width: 100%;
+                padding: 1.2em;
+                color: var(--text);
+                font-size: 0.9em;
+                line-height: 1.5;
+            }
+
+            .install-help-card h3 {
+                margin: 0 0 0.8em;
+                color: var(--gold);
+                font-family: var(--font-display);
+                font-size: 1.1em;
+            }
+
+            .install-help-card ol {
+                padding-left: 1.2em;
+                margin: 0.5em 0;
+            }
+
+            .install-help-card li {
+                margin-bottom: 0.4em;
+            }
+
+            .install-help-card .ios-share-icon {
+                display: inline-block;
+                width: 0.9em;
+                height: 0.9em;
+                vertical-align: -2px;
+                margin: 0 0.1em;
+            }
+
+            .install-help-actions {
+                display: flex;
+                justify-content: flex-end;
+                margin-top: 1em;
+            }
+
             /* Loading stars in bottom bar */
             .bar-star-main {
                 display: inline-block;
@@ -428,8 +515,45 @@ export class TarotApp extends LitElement {
     @state() private _isLoading = false;
     @state() private _settingsOpen = false;
     @state() private _readingVersion = 0;
+    @state() private _isStandalone = false;
+    @state() private _showInstallHelp = false;
+
+    private _deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
+    private _standaloneMql: MediaQueryList | null = null;
 
     @query('debug-console') private _debugConsole!: DebugConsole;
+
+    override connectedCallback(): void {
+        super.connectedCallback();
+        this._standaloneMql = window.matchMedia('(display-mode: standalone)');
+        this._isStandalone = this._standaloneMql.matches
+            || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+        this._standaloneMql.addEventListener('change', this._onStandaloneChange);
+        window.addEventListener('beforeinstallprompt', this._onBeforeInstallPrompt as EventListener);
+        window.addEventListener('appinstalled', this._onAppInstalled);
+    }
+
+    override disconnectedCallback(): void {
+        super.disconnectedCallback();
+        this._standaloneMql?.removeEventListener('change', this._onStandaloneChange);
+        window.removeEventListener('beforeinstallprompt', this._onBeforeInstallPrompt as EventListener);
+        window.removeEventListener('appinstalled', this._onAppInstalled);
+    }
+
+    private _onStandaloneChange = (event: MediaQueryListEvent): void => {
+        this._isStandalone = event.matches;
+    };
+
+    private _onBeforeInstallPrompt = (event: BeforeInstallPromptEvent): void => {
+        event.preventDefault();
+        this._deferredInstallPrompt = event;
+    };
+
+    private _onAppInstalled = (): void => {
+        this._isStandalone = true;
+        this._deferredInstallPrompt = null;
+        this._showInstallHelp = false;
+    };
 
     /** Inject services from composition root. */
     setServices(services: AppServices): void {
@@ -471,10 +595,14 @@ export class TarotApp extends LitElement {
                 </div>
             ` : nothing}
 
+            ${this._showInstallHelp ? this._renderInstallHelp() : nothing}
+
             <div class="bottom-bar" @touchend=${this._preventBottomBarDoubleTapZoom}>
                 <div class="bar-left">
+                    ${this._renderInstallButton()}
                     ${this._screen !== 'home' ? html`
-                        <button class="btn btn-ghost" @click=${() => this.navigate('home')}>Home</button>
+                        <button class="btn btn-ghost" @click=${() => this.navigate('home')}
+                            style="margin-left: 0.4em;">Home</button>
                     ` : ''}
                 </div>
                 <div class="bar-center">
@@ -647,6 +775,87 @@ export class TarotApp extends LitElement {
     private _toggleSettings(): void {
         this._settingsOpen = !this._settingsOpen;
     }
+
+    private _renderInstallButton() {
+        if (this._isStandalone) return nothing;
+        return html`
+            <button
+                class="install-btn"
+                title="Add Tarot to your home screen"
+                aria-label="Add Tarot to your home screen"
+                @click=${this._onInstallClick}
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                    aria-hidden="true">
+                    <rect x="5" y="2.5" width="14" height="19" rx="2.5"/>
+                    <line x1="12" y1="9" x2="12" y2="16"/>
+                    <line x1="8.5" y1="12.5" x2="15.5" y2="12.5"/>
+                </svg>
+            </button>
+        `;
+    }
+
+    private _renderInstallHelp() {
+        const ua = navigator.userAgent ?? '';
+        const isIos = /iPhone|iPad|iPod/i.test(ua)
+            || ((navigator.platform ?? '') === 'MacIntel' && navigator.maxTouchPoints > 1);
+        return html`
+            <div class="install-help" @click=${(e: Event) => { if (e.target === e.currentTarget) this._closeInstallHelp(); }}>
+                <div class="install-help-card">
+                    <h3>Add Tarot to your home screen</h3>
+                    ${isIos ? html`
+                        <ol>
+                            <li>Tap the
+                                <svg class="ios-share-icon" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="1.8"
+                                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M12 3v12"/>
+                                    <path d="M8 7l4-4 4 4"/>
+                                    <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>
+                                </svg>
+                                Share button at the bottom of Safari.
+                            </li>
+                            <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+                            <li>Tap <b>Add</b> in the top-right corner.</li>
+                        </ol>
+                    ` : html`
+                        <ol>
+                            <li>Open your browser menu (usually <b>⋮</b> in the top-right).</li>
+                            <li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li>
+                            <li>Confirm to place the Tarot icon on your home screen.</li>
+                        </ol>
+                    `}
+                    <div class="install-help-actions">
+                        <button class="btn btn-ghost" @click=${this._closeInstallHelp}>Got it</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    private _onInstallClick = async (): Promise<void> => {
+        const deferred = this._deferredInstallPrompt;
+        if (deferred) {
+            try {
+                await deferred.prompt();
+                const choice = await deferred.userChoice;
+                if (choice.outcome === 'accepted') {
+                    this._isStandalone = true;
+                }
+            } catch (err) {
+                console.warn('Install prompt failed:', err);
+            } finally {
+                this._deferredInstallPrompt = null;
+            }
+            return;
+        }
+        this._showInstallHelp = true;
+    };
+
+    private _closeInstallHelp = (): void => {
+        this._showInstallHelp = false;
+    };
 
     private _preventBottomBarDoubleTapZoom(event: TouchEvent): void {
         const now = Date.now();

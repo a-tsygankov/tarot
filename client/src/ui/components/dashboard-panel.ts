@@ -25,6 +25,7 @@ interface DashboardData {
     recentGames: Array<{
         gameId: string;
         uid: string;
+        userName: string | null;
         spreadType: number;
         question: string | null;
         topic: string | null;
@@ -325,6 +326,13 @@ export class DashboardPanel extends LitElement {
 
             .tag.topic { border-left: 2px solid var(--gold); }
             .tag.lang { border-left: 2px solid var(--accent); }
+            .tag.tone { border-left: 2px solid var(--gold-dim); }
+
+            .user-name {
+                color: var(--gold);
+                font-size: 0.85em;
+                margin-left: 0.35em;
+            }
 
             /* ── Performance ── */
             .perf-grid {
@@ -919,6 +927,7 @@ export class DashboardPanel extends LitElement {
                                     <th>Spread</th>
                                     <th>Topic</th>
                                     <th>Lang</th>
+                                    <th>Tone</th>
                                     <th>Turns</th>
                                     <th>Question</th>
                                 </tr>
@@ -927,11 +936,15 @@ export class DashboardPanel extends LitElement {
                                 ${d.recentGames.map(g => html`
                                     <tr>
                                         <td>${this._formatTime(g.createdAt)}</td>
-                                        <td><a class="drill-link" @click=${() => this._openUser(g.uid)}>${g.uid}</a></td>
+                                        <td>
+                                            <a class="drill-link" @click=${() => this._openUser(g.uid)}>${g.uid}</a>
+                                            ${g.userName ? html` <span class="user-name">${g.userName}</span>` : nothing}
+                                        </td>
                                         <td>${g.city ?? '-'}</td>
                                         <td><a class="drill-link" @click=${() => this._openGame(g.gameId)}>${g.spreadType}-card</a></td>
                                         <td>${g.topic ? html`<span class="tag topic">${g.topic}</span>` : '-'}</td>
                                         <td><span class="tag lang">${g.language}</span></td>
+                                        <td>${g.tone ? html`<span class="tag tone">${g.tone}</span>` : '-'}</td>
                                         <td>${g.turnCount}</td>
                                         <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis;">
                                             ${g.question ?? '-'}
@@ -1207,6 +1220,7 @@ export class DashboardPanel extends LitElement {
                                     <th>Spread</th>
                                     <th>Topic</th>
                                     <th>Lang</th>
+                                    <th>Tone</th>
                                     <th>Turns</th>
                                     <th>Location</th>
                                     <th>Question</th>
@@ -1219,6 +1233,7 @@ export class DashboardPanel extends LitElement {
                                         <td><a class="drill-link" @click=${() => this._openGame(g.gameId)}>${g.spreadType}-card</a></td>
                                         <td>${g.topic ? html`<span class="tag topic">${g.topic}</span>` : '-'}</td>
                                         <td><span class="tag lang">${g.language}</span></td>
+                                        <td>${g.tone ? html`<span class="tag tone">${g.tone}</span>` : '-'}</td>
                                         <td>${g.turnCount}</td>
                                         <td>${g.location
                                             ? html`${this._countryFlag(g.location.country)} ${g.location.city ?? g.location.country ?? ''}`
