@@ -1,7 +1,7 @@
 import type { Env } from '../env.js';
 import type { ReadingRequest } from '@shared/contracts/api-contracts.js';
 import { callAI } from '../services/ai-router.js';
-import { buildReadingPrompt } from '../prompts.js';
+import { buildReadingPrompt, PROMPTS } from '../prompts.js';
 import { parseReadingResponse } from '../services/response-parser.js';
 import { formatPromptField, formatTraitSummary, sanitizeTraitMap, sanitizeUserText } from '../services/prompt-safety.js';
 import type { R2GameRepository } from '../repositories/game-repository.js';
@@ -62,6 +62,14 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
             gameCtx += '\nREADING SUMMARY: ' + gameContext.readingDigest;
         }
 
+        const clarificationCards = gameContext.clarificationCards ?? [];
+        if (clarificationCards.length > 0) {
+            const clarList = clarificationCards
+                .map(c => `${c.position}: ${c.name}${c.reversed ? ' (Rev)' : ''}`)
+                .join(', ');
+            gameCtx += `\nCLARIFICATION CARDS: ${clarList}\n${PROMPTS.clarificationInstruction}`;
+        }
+
         const prompt = buildReadingPrompt(
             userSummary,
             gameCtx,
@@ -110,6 +118,12 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
             const now = new Date();
             const date = now.toISOString().slice(0, 10);
 
+            const clarificationCardDocs = clarificationCards.map(c => ({
+                position: c.position,
+                name: c.name,
+                reversed: c.reversed,
+            }));
+
             // Create or update game doc with reading
             const existingGame = await deps.games.getGame(gameContext.gameId);
             if (!existingGame) {
@@ -123,6 +137,7 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                         name: c.name,
                         reversed: c.reversed,
                     })),
+                clarificationCards: clarificationCardDocs,
                 question: sanitizedQuestion,
                 topic: sanitizedTopic,
                 language: userContext.language,
@@ -146,6 +161,7 @@ export async function handleReading(request: Request, env: Env, deps: ReadingDep
                 gameContext.gameId,
                 parsed.reading as unknown as Record<string, unknown>,
                 parsed.contextUpdate,
+                clarificationCardDocs,
             );
 
             // Write turn document

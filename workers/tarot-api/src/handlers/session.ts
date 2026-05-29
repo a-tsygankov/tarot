@@ -59,6 +59,7 @@ export async function handleSession(request: Request, env: Env, deps: SessionDep
         // Analytics (best-effort)
         deps.analytics.incrementDaily(date, { sessions: 1, uniqueUsers: 1 }).catch(() => {});
         deps.indexWriter.trackActiveUser(date, body.uid).catch(() => {});
+        deps.indexWriter.addDateSession(date, body.sessionId).catch(() => {});
 
         return Response.json({ ok: true });
     } catch (err) {

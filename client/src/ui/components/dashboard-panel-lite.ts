@@ -56,6 +56,8 @@ export class DashboardPanelLite extends LitElement {
     @state() private keyInput = '';
     @state() private days = 1;
     @state() private lastRefresh = '';
+    @state() private aliasDraft = '';
+    @state() private aliasSaving = false;
 
     private adminKey = '';
     private timer: ReturnType<typeof setInterval> | null = null;
@@ -155,10 +157,13 @@ export class DashboardPanelLite extends LitElement {
     private renderTab(d: JsonMap) {
         if (this.tab === 'users') {
             const users = this.getArr(d, 'users');
-            return html`<div class="panel"><div class="section">Users</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Profile</th><th>Traits</th><th>Sessions</th><th>Locations</th></tr></thead><tbody>
+            return html`<div class="panel"><div class="section">Users</div><div class="subtle" style="margin-bottom:.5em;">Readings / Questions / Follow-ups counted within the selected period.</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Profile</th><th>Readings</th><th>Questions</th><th>Follow-ups</th><th>Traits</th><th>Sessions</th><th>Locations</th></tr></thead><tbody>
                 ${users.map((u: any) => html`<tr>
-                    <td><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>${u.name ?? this.short(u.uid)}</button><div class="subtle">${this.short(u.uid)} · ${u.language}/${u.tone}</div></td>
-                    <td><div>${[u.gender, u.birthdate].filter(Boolean).join(' · ') || 'No profile fields'}</div><div class="subtle">Readings ${u.totalReadings} · Follow-ups ${u.totalFollowUps}</div><div class="subtle">${[u.lastCity, u.lastCountry].filter(Boolean).join(', ') || 'Unknown'} · ${this.time(u.lastSeenAt)}</div><div class="subtle">${u.latestDevice ?? 'Unknown device'}</div></td>
+                    <td><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>${this.userLabel(u.name, u.uid, u.alias)}</button><div class="subtle">${this.short(u.uid)} · ${u.language}/${u.tone}</div></td>
+                    <td><div>${[u.gender, u.birthdate].filter(Boolean).join(' · ') || 'No profile fields'}</div><div class="subtle">${[u.lastCity, u.lastCountry].filter(Boolean).join(', ') || 'Unknown'} · ${this.time(u.lastSeenAt)}</div><div class="subtle">${u.latestDevice ?? 'Unknown device'}</div></td>
+                    <td>${u.readingsInPeriod ?? 0}</td>
+                    <td>${u.questionsInPeriod ?? 0}</td>
+                    <td>${u.followUpsInPeriod ?? 0}</td>
                     <td>${this.detailList('Traits', this.traitEntries(u.userTraits))}</td>
                     <td>${this.detailActionList('Sessions', u.sessionIds ?? [], (id: string) => this.openDetail('session', id))}</td>
                     <td>${this.detailActionList('Locations', (u.locationKeys ?? []).map((v: string) => this.prettyLocation(v)), (key: string) => this.openDetail('location', this.locationKeyFromPretty(key)))}</td>
@@ -167,13 +172,15 @@ export class DashboardPanelLite extends LitElement {
         }
         if (this.tab === 'sessions') {
             const sessions = this.getArr(d, 'sessions');
-            return html`<div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Location</th><th>Activity</th><th>Questions</th></tr></thead><tbody>
+            return html`<div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Location</th><th>Readings</th><th>Questions</th><th>Follow-ups</th><th>Device</th></tr></thead><tbody>
                 ${sessions.map((s: any) => html`<tr>
                     <td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button><div class="subtle">${this.time(s.createdAt)}</div></td>
-                    <td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid)}</button></td>
+                    <td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid, s.userAlias)}</button></td>
                     <td>${s.city || s.country ? html`<button class="linkish" @click=${() => this.openDetail('location', this.locationKey(s.city, s.country))}>${[s.city, s.country].filter(Boolean).join(', ')}</button>` : '-'}</td>
-                    <td>${s.gameCount} readings · ${s.device ?? 'unknown'} · v${s.appVersion}</td>
+                    <td>${s.gameCount}</td>
                     <td>${s.questionCount}</td>
+                    <td>${s.followUpCount ?? 0}</td>
+                    <td class="subtle">${s.device ?? 'unknown'} · v${s.appVersion}</td>
                 </tr>`)}
             </tbody></table></div></div>`;
         }
@@ -194,7 +201,7 @@ export class DashboardPanelLite extends LitElement {
             ${readings.map((g: any) => html`<tr>
                 <td>${this.time(g.createdAt)}</td>
                 <td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.spreadType}-card</button></td>
-                <td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid)}</button></td>
+                <td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid, g.userAlias)}</button></td>
                 <td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td>
                 <td>${g.city || g.country ? html`<button class="linkish" @click=${() => this.openDetail('location', this.locationKey(g.city, g.country))}>${[g.city, g.country].filter(Boolean).join(', ')}</button>` : '-'}</td>
                 <td>${g.question ?? '-'}</td>
@@ -206,16 +213,29 @@ export class DashboardPanelLite extends LitElement {
         const d = this.detail!;
         if (this.detailKind === 'user') {
             const user = this.getObj(d, 'user')!;
-            return html`${this.crumb('User', user.name ?? this.short(String(user.uid ?? '')))}
+            const uid = String(user.uid ?? '');
+            return html`${this.crumb('User', this.userLabel(user.name, uid, user.adminAlias))}
                 <div class="panel"><div class="section">User Profile</div><div class="grid">
                     <span class="k">UID</span><span class="v">${user.uid}</span>
+                    <span class="k">Name</span><span class="v">${user.name ?? '—'}</span>
                     <span class="k">Language</span><span class="v">${user.preferences?.language}</span>
                     <span class="k">Tone</span><span class="v">${user.preferences?.tone}</span>
                     <span class="k">Readings</span><span class="v">${user.stats?.totalReadings}</span>
                     <span class="k">Follow-ups</span><span class="v">${user.stats?.totalFollowUps}</span>
                     <span class="k">Last location</span><span class="v">${[user.locations?.lastCity, user.locations?.lastCountry].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Latest device</span><span class="v">${user.latestDevice ?? 'Unknown'}</span>
-                </div>${this.traitEntries(user.userTraits).length ? html`<div class="section" style="margin-top:.9em;">Traits</div><div class="pills">${this.traitEntries(user.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div>` : nothing}</div>
+                </div>
+                <div class="section" style="margin-top:.9em;">Admin Alias</div>
+                <div class="subtle" style="margin-bottom:.4em;">A label only admins see. Shown together with the user's own name when both are set.</div>
+                <div class="row">
+                    <input class="field" type="text" placeholder="Set an alias..." .value=${this.aliasDraft}
+                        @input=${(e: InputEvent) => { this.aliasDraft = (e.target as HTMLInputElement).value; }} />
+                    <button class="toggle" ?disabled=${this.aliasSaving} @click=${() => this.saveAlias(uid)}>
+                        ${this.aliasSaving ? html`<span class="spinner"></span>` : 'Save'}
+                    </button>
+                    ${user.adminAlias ? html`<button class="toggle" ?disabled=${this.aliasSaving} @click=${() => this.clearAlias(uid)}>Clear</button>` : nothing}
+                </div>
+                ${this.traitEntries(user.userTraits).length ? html`<div class="section" style="margin-top:.9em;">Traits</div><div class="pills">${this.traitEntries(user.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div>` : nothing}</div>
                 <div class="panel"><div class="section">Sessions</div><div class="stack">${this.getArr(d, 'sessions').map((s: any) => html`<details><summary>${this.time(s.createdAt)} · ${[s.city, s.country].filter(Boolean).join(', ') || 'Unknown'} · ${s.gameCount} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>Open session</button>${s.lastGameId ? html`<button class="linkish" @click=${() => this.openDetail('reading', s.lastGameId)}>Latest reading</button>` : nothing}</div></details>`)}</div></div>
                 <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>Session</th><th>Location</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.spreadType}-card</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
         }
@@ -225,7 +245,7 @@ export class DashboardPanelLite extends LitElement {
             return html`${this.crumb('Reading', this.short(String(game.gameId ?? '')))}
                 <div class="panel"><div class="section">Reading Detail</div><div class="grid">
                     <span class="k">Reading ID</span><span class="v">${game.gameId}</span>
-                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(game.uid))}>${this.userLabel(readingUser?.name, String(game.uid))}</button></span>
+                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(game.uid))}>${this.userLabel(readingUser?.name, String(game.uid), readingUser?.alias)}</button></span>
                     <span class="k">Session</span><span class="v"><button class="linkish" @click=${() => this.openDetail('session', String(game.sessionId))}>${this.short(String(game.sessionId))}</button></span>
                     <span class="k">Location</span><span class="v">${[game.location?.city, game.location?.country].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Question</span><span class="v">${game.question ?? '-'}</span>
@@ -237,7 +257,7 @@ export class DashboardPanelLite extends LitElement {
             const sessionUser = this.getObj(d, 'user');
             return html`${this.crumb('Session', this.short(String(session.sessionId ?? '')))}
                 <div class="panel"><div class="section">Session Detail</div><div class="grid">
-                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(session.uid))}>${this.userLabel(sessionUser?.name, String(session.uid))}</button></span>
+                    <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(session.uid))}>${this.userLabel(sessionUser?.name, String(session.uid), sessionUser?.adminAlias)}</button></span>
                     <span class="k">Location</span><span class="v">${[session.city, session.country].filter(Boolean).join(', ') || 'Unknown'}</span>
                     <span class="k">Timezone</span><span class="v">${session.timezone ?? '-'}</span>
                     <span class="k">Device</span><span class="v">${session.device ?? '-'} · v${session.appVersion}</span>
@@ -252,9 +272,9 @@ export class DashboardPanelLite extends LitElement {
         }
         const location = this.getObj(d, 'location')!;
         return html`${this.crumb('Location', [location.city, location.country].filter(Boolean).join(', '))}
-            <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${u.name ?? this.short(u.uid)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${this.traitEntries(u.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div></details>`)}</div></div>
-            <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Readings</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
-            <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
+            <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${this.userLabel(u.name, u.uid, u.alias)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${this.traitEntries(u.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div></details>`)}</div></div>
+            <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Readings</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid, s.userAlias)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
+            <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid, g.userAlias)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
     }
 
     private stat(value: unknown, scopeOrLabel: unknown, maybeLabel?: string) {
@@ -305,6 +325,9 @@ export class DashboardPanelLite extends LitElement {
             const apiKind = kind === 'reading' ? 'game' : kind;
             this.detail = await this.fetchJson(`/api/admin/${apiKind}/${id}`);
             this.detailKind = kind;
+            if (kind === 'user') {
+                this.aliasDraft = String(this.getObj(this.detail, 'user')?.adminAlias ?? '');
+            }
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);
         } finally {
@@ -312,9 +335,42 @@ export class DashboardPanelLite extends LitElement {
         }
     }
 
-    private async fetchJson(path: string): Promise<JsonMap> {
+    private async saveAlias(uid: string): Promise<void> {
+        await this.submitAlias(uid, this.aliasDraft.trim() || null);
+    }
+
+    private async clearAlias(uid: string): Promise<void> {
+        this.aliasDraft = '';
+        await this.submitAlias(uid, null);
+    }
+
+    private async submitAlias(uid: string, alias: string | null): Promise<void> {
+        if (this.aliasSaving) return;
+        this.aliasSaving = true; this.error = '';
+        try {
+            await this.fetchJson(`/api/admin/user/${uid}/alias`, { method: 'POST', body: { alias } });
+            await this.openDetail('user', uid);
+            void this.fetchDashboard();
+        } catch (error) {
+            this.error = error instanceof Error ? error.message : String(error);
+        } finally {
+            this.aliasSaving = false;
+        }
+    }
+
+    private async fetchJson(path: string, options?: { method?: string; body?: unknown }): Promise<JsonMap> {
         const base = this.services?.config?.apiBase ?? '';
-        const response = await fetch(`${base}${path}`, { headers: { 'X-Admin-Key': this.adminKey } });
+        const init: RequestInit = {
+            method: options?.method ?? 'GET',
+            headers: {
+                'X-Admin-Key': this.adminKey,
+                ...(options?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+            },
+        };
+        if (options?.body !== undefined) {
+            init.body = JSON.stringify(options.body);
+        }
+        const response = await fetch(`${base}${path}`, init);
         if (response.status === 401) { this.logout(); throw new Error('Admin key expired or invalid.'); }
         if (!response.ok) {
             const body = await response.json().catch(() => ({})) as Record<string, string>;
@@ -324,7 +380,11 @@ export class DashboardPanelLite extends LitElement {
     }
 
     private short(value: string): string { return value.length <= 10 ? value : `${value.slice(0, 8)}...`; }
-    private userLabel(name: string | null | undefined, uid: string): string { return name ? `${name} (${this.short(uid)})` : this.short(uid); }
+    /** Display label: "name / alias" when both set, else whichever exists, else short uid. */
+    private userLabel(name: string | null | undefined, uid: string, alias?: string | null): string {
+        const both = name && alias ? `${name} / ${alias}` : (name || alias || '');
+        return both ? `${both} (${this.short(uid)})` : this.short(uid);
+    }
     private time(iso: string): string { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; }
     private locationKey(city: string | null, country: string | null): string { return encodeURIComponent(`${city ?? ''}|${country ?? ''}`); }
     private prettyLocation(key: string): string { return decodeURIComponent(key).replace('|', ', '); }

@@ -74,6 +74,16 @@ export class R2UserRepository {
         return doc;
     }
 
+    /** Set (or clear, when null/empty) the admin-assigned alias for a user. */
+    async setAlias(uid: string, alias: string | null): Promise<UserDocument | null> {
+        const doc = await this.get(uid);
+        if (!doc) return null;
+        doc.adminAlias = sanitizeUserText(alias, 120);
+        doc.etagVersion += 1;
+        await r2PutJson(this.r2, this.key(uid), doc);
+        return doc;
+    }
+
     async incrementStat(uid: string, stat: 'totalReadings' | 'totalFollowUps'): Promise<void> {
         const doc = await this.get(uid);
         if (!doc) return;

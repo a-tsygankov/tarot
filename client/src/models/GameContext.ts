@@ -8,10 +8,15 @@ import type { CardDraw, ReadingResult, ReadingResponse } from '@shared/contracts
  * Full oracle text renders in UI and logs to R2.
  * Only short digests stay in qaHistory for prompt context.
  */
+/** Position labels for clarification cards, in draw order. */
+const CLARIFICATION_POSITIONS = ['Clarification 1', 'Clarification 2'];
+const MAX_CLARIFICATION_CARDS = CLARIFICATION_POSITIONS.length;
+
 export class GameContext implements IGameContext {
     gameId: string;
     spreadType: 1 | 3 | 5;
     cards: CardDraw[] = [];
+    clarificationCards: CardDraw[] = [];
     question: string | null = null;
     topic: string | null = null;
     reading: ReadingResult | null = null;
@@ -29,6 +34,28 @@ export class GameContext implements IGameContext {
     /** Add a drawn card. */
     addCard(card: CardDraw): void {
         this.cards.push(card);
+    }
+
+    /** Whether more clarification cards can be drawn for this game. */
+    get canAddClarification(): boolean {
+        return this.spreadType === 1 && this.clarificationCards.length < MAX_CLARIFICATION_CARDS;
+    }
+
+    /** Names already in play (spread + clarification), for duplicate-free draws. */
+    usedCardNames(): string[] {
+        return [...this.cards, ...this.clarificationCards].map(c => c.name);
+    }
+
+    /**
+     * Draw and append one clarification card.
+     * Returns the new card, or null if no slot is available / deck exhausted.
+     */
+    addClarificationCard(name: string, reversed: boolean): CardDraw | null {
+        if (!this.canAddClarification) return null;
+        const position = CLARIFICATION_POSITIONS[this.clarificationCards.length];
+        const card: CardDraw = { position, name, reversed };
+        this.clarificationCards.push(card);
+        return card;
     }
 
     /** Check if all cards are revealed. */
@@ -71,6 +98,12 @@ export class GameContext implements IGameContext {
             ctx += 'READING SUMMARY: ' + this.readingDigest + '\n';
         }
 
+        if (this.clarificationCards.length > 0) {
+            ctx += 'CLARIFICATION CARDS: ' + this.clarificationCards.map(c =>
+                `${c.position}: ${c.name}${c.reversed ? ' (Rev)' : ''}`
+            ).join(', ') + '\n';
+        }
+
         if (this.qaHistory.length > 0) {
             ctx += 'CONVERSATION HISTORY (digests):\n';
             for (const qa of this.qaHistory) {
@@ -83,11 +116,12 @@ export class GameContext implements IGameContext {
 
     /** Serialize for API requests. */
     toApiPayload(options?: { noReversedCards?: boolean }) {
-        const cards = this.getCardsForOutput(options);
+        const cards = this.getCardsForOutput(this.cards, options);
         return {
             gameId: this.gameId,
             spreadType: this.spreadType,
             cards,
+            clarificationCards: this.getCardsForOutput(this.clarificationCards, options),
             question: this.question,
             topic: this.topic,
             readingDigest: this.readingDigest,
@@ -105,6 +139,10 @@ export class GameContext implements IGameContext {
             ...card,
             reversed: false,
         }));
+        this.clarificationCards = this.clarificationCards.map(card => ({
+            ...card,
+            reversed: false,
+        }));
     }
 
     /** Reset for new game. */
@@ -112,6 +150,7 @@ export class GameContext implements IGameContext {
         this.gameId = crypto.randomUUID();
         this.spreadType = spreadType;
         this.cards = [];
+        this.clarificationCards = [];
         this.question = null;
         this.topic = null;
         this.reading = null;
@@ -122,12 +161,12 @@ export class GameContext implements IGameContext {
         this.turnCount = 0;
     }
 
-    private getCardsForOutput(options?: { noReversedCards?: boolean }): CardDraw[] {
+    private getCardsForOutput(cards: CardDraw[], options?: { noReversedCards?: boolean }): CardDraw[] {
         if (!options?.noReversedCards) {
-            return this.cards;
+            return cards;
         }
 
-        return this.cards.map(card => ({
+        return cards.map(card => ({
             ...card,
             reversed: false,
         }));

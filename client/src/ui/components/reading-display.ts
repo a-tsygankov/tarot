@@ -3,7 +3,9 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 import { ReadingImageExporter } from '../../services/Export/ReadingImageExporter.js';
+import { drawRandomCard } from '../../app/deck.js';
 import './tarot-card.js';
+import './clarification-cards.js';
 
 /**
  * Displays the AI reading — card-by-card + overall summary.
@@ -183,6 +185,7 @@ export class ReadingDisplay extends LitElement {
     @state() private _paused = false;
     @state() private _ttsStatus = '';
     @state() private _copyTooltip = false;
+    @state() private _clarifying = false;
 
     private _copyTooltipTimer: ReturnType<typeof setTimeout> | null = null;
     private readonly _readingImageExporter = new ReadingImageExporter();
@@ -267,6 +270,21 @@ export class ReadingDisplay extends LitElement {
                     </div>
                 ` : nothing}
 
+                ${this._game.spreadType === 1 ? html`
+                    ${this._clarifying ? html`
+                        <div class="progress-section center">
+                            <div class="spinner spinner-lg"></div>
+                            <div class="tts-status">Drawing clarity from the cards...</div>
+                        </div>
+                    ` : nothing}
+                    <clarification-cards
+                        .services=${this.services}
+                        .cards=${this._game.clarificationCards}
+                        .disabled=${this._clarifying}
+                        @reveal=${this._revealClarification}
+                    ></clarification-cards>
+                ` : nothing}
+
                 <div class="actions-bar">
                     <button class="btn" @click=${this._toggleTts}>
                         ${this._speaking ? (this._paused ? '▶ Resume' : '⏸ Pause') : '🔊 Listen'}
@@ -324,6 +342,37 @@ export class ReadingDisplay extends LitElement {
                 this._speaking = false;
                 this._paused = false;
             });
+    }
+
+    private async _revealClarification(): Promise<void> {
+        const game = this._game;
+        if (!game || this._clarifying || !game.canAddClarification) return;
+
+        const name = drawRandomCard(game.usedCardNames());
+        if (!name) return;
+        const reversed = this.services.userContext.noReversedCards ? false : Math.random() < 0.3;
+        game.addClarificationCard(name, reversed);
+        void this.services.audioCueService.playCardReveal();
+
+        this._clarifying = true;
+        this.services.speechService.stop();
+        this._speaking = false;
+        this._paused = false;
+
+        try {
+            await this.services.audioCueService.startOracleWaiting();
+            const response = await this.services.apiService.fetchReadingAsync(game, {});
+            game.applyReading(response);
+            if (response.userContextDelta) {
+                this.services.userContext.applyAiUpdate(response.userContextDelta);
+            }
+            this.services.userContext.applyUserTraits(response.userTraits);
+        } catch (err) {
+            console.error('Clarification reading failed:', err instanceof Error ? err.message : err);
+        } finally {
+            await this.services.audioCueService.stopOracleWaiting();
+            this._clarifying = false;
+        }
     }
 
     private _askFollowUp(): void {

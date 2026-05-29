@@ -29,6 +29,22 @@ export class IndexWriter {
         await r2PutJson(this.r2, key, entries);
     }
 
+    /** Add a session to the date index (time-bucketed). */
+    async addDateSession(date: string, sessionId: string): Promise<void> {
+        const key = `indexes/date-sessions/${date}.json`;
+        const entries = await r2GetJson<IndexEntry[]>(this.r2, key) ?? [];
+        entries.push({ id: sessionId, createdAt: new Date().toISOString() });
+        await r2PutJson(this.r2, key, entries);
+    }
+
+    /** Add a follow-up turn to the date index (time-bucketed). */
+    async addDateFollowUp(date: string, gameId: string, turnNumber: number): Promise<void> {
+        const key = `indexes/date-followups/${date}.json`;
+        const entries = await r2GetJson<IndexEntry[]>(this.r2, key) ?? [];
+        entries.push({ id: `${gameId}/${turnNumber}`, createdAt: new Date().toISOString() });
+        await r2PutJson(this.r2, key, entries);
+    }
+
     /** Track active user for a given date (deduplicated). */
     async trackActiveUser(date: string, uid: string): Promise<void> {
         const key = `indexes/active-users/${date}.json`;
