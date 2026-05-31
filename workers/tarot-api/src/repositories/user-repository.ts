@@ -1,6 +1,7 @@
 import type { UserDocument } from '@shared/contracts/entity-contracts.js';
 import { WORKER_CONFIG } from '../config.js';
-import { r2GetJson, r2PutJson } from '../services/r2-adapter.js';
+import { r2GetJson, r2PutJsonWithMeta } from '../services/r2-adapter.js';
+import { buildUserMetadata } from '../services/entity-metadata.js';
 import { sanitizeUserText } from '../services/prompt-safety.js';
 
 const PREFIX = 'entities/users';
@@ -45,7 +46,7 @@ export class R2UserRepository {
             if (update.location !== undefined) existing.locations.lastCity = sanitizeUserText(update.location, 120);
             if (update.userTraitsId !== undefined) existing.userTraitsId = update.userTraitsId;
             existing.etagVersion += 1;
-            await r2PutJson(this.r2, this.key(uid), existing);
+            await r2PutJsonWithMeta(this.r2, this.key(uid), existing, buildUserMetadata(existing));
             return existing;
         }
 
@@ -70,7 +71,7 @@ export class R2UserRepository {
             },
             etagVersion: 1,
         };
-        await r2PutJson(this.r2, this.key(uid), doc);
+        await r2PutJsonWithMeta(this.r2, this.key(uid), doc, buildUserMetadata(doc));
         return doc;
     }
 
@@ -80,7 +81,7 @@ export class R2UserRepository {
         if (!doc) return null;
         doc.adminAlias = sanitizeUserText(alias, 120);
         doc.etagVersion += 1;
-        await r2PutJson(this.r2, this.key(uid), doc);
+        await r2PutJsonWithMeta(this.r2, this.key(uid), doc, buildUserMetadata(doc));
         return doc;
     }
 
@@ -89,7 +90,7 @@ export class R2UserRepository {
         if (!doc) return;
         doc.stats[stat] += 1;
         doc.etagVersion += 1;
-        await r2PutJson(this.r2, this.key(uid), doc);
+        await r2PutJsonWithMeta(this.r2, this.key(uid), doc, buildUserMetadata(doc));
     }
 
     async applyContextDelta(uid: string, update: {
@@ -116,6 +117,6 @@ export class R2UserRepository {
         }
 
         doc.etagVersion += 1;
-        await r2PutJson(this.r2, this.key(uid), doc);
+        await r2PutJsonWithMeta(this.r2, this.key(uid), doc, buildUserMetadata(doc));
     }
 }
