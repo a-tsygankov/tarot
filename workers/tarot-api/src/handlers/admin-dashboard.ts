@@ -1,6 +1,35 @@
 import type { Env } from '../env.js';
 import type { DailySummary, GameDocument, SessionDocument, TurnDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
-import { buildLocationKey, listDocuments, requireAdmin } from './admin-helpers.js';
+import { buildLocationKey, loadJson, requireAdmin } from './admin-helpers.js';
+
+const CACHE_TTL_MS = 3 * 60 * 1000;
+
+interface IndexEntry { id: string; createdAt: string }
+
+/** Count objects under an R2 prefix without fetching their bodies. */
+async function countPrefix(r2: R2Bucket, prefix: string): Promise<number> {
+    let count = 0;
+    let cursor: string | undefined;
+    do {
+        const batch: R2Objects = await r2.list({ prefix, limit: 1000, cursor });
+        count += batch.objects.length;
+        cursor = batch.truncated ? (batch as { cursor?: string }).cursor : undefined;
+    } while (cursor);
+    return count;
+}
+
+/** Read a single date index (date-games / date-sessions / date-followups). Tolerates the legacy {gameIds}/{ids} shape. */
+async function loadDateIndex(r2: R2Bucket, key: string): Promise<string[]> {
+    const obj = await r2.get(key);
+    if (!obj) return [];
+    try {
+        const data = await obj.json() as IndexEntry[] | { gameIds?: string[]; ids?: string[] };
+        if (Array.isArray(data)) return data.map(e => e.id);
+        return data.gameIds ?? data.ids ?? [];
+    } catch {
+        return [];
+    }
+}
 
 /**
  * Dashboard data response.
@@ -105,7 +134,21 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
 
     const url = new URL(request.url);
     const requestedDays = parseInt(url.searchParams.get('days') ?? '7', 10);
-    const days = [1, 7, 30].includes(requestedDays) ? requestedDays : 7;
+    const days = [1, 3, 7, 30].includes(requestedDays) ? requestedDays : 7;
+    const force = url.searchParams.get('force') === '1';
+
+    const cacheKey = `cache/dashboard/days-${days}.json`;
+    if (!force) {
+        try {
+            const cached = await loadJson<DashboardResponse & { cachedAt?: string }>(env.R2, cacheKey);
+            if (cached?.cachedAt) {
+                const age = Date.now() - new Date(cached.cachedAt).getTime();
+                if (age < CACHE_TTL_MS) {
+                    return Response.json(cached);
+                }
+            }
+        } catch { /* fall through to recompute */ }
+    }
 
     try {
         const today = new Date();
@@ -116,39 +159,75 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             dates.push(d.toISOString().slice(0, 10));
         }
 
-        // Fetch daily summaries in parallel
-        const dailyPromises = dates.map(async (date) => {
-            const obj = await env.R2.get(`analytics/daily/${date}.json`);
-            if (!obj) return null;
-            try {
-                return await obj.json() as DailySummary;
-            } catch {
-                return null;
-            }
-        });
+        // Daily summaries (already aggregated server-side) — cheap reads.
+        const dailyPromises = dates.map(async (date) =>
+            loadJson<DailySummary>(env.R2, `analytics/daily/${date}.json`),
+        );
 
-        // Fetch active users for today.
-        // The active-users index stores a plain string[] of uids (legacy callers may
-        // have stored { uids }), so accept both shapes.
+        // Active users for today (legacy {uids} shape tolerated).
         const activeUsersPromise = (async () => {
             const obj = await env.R2.get(`indexes/active-users/${dates[0]}.json`);
             if (!obj) return 0;
             try {
                 const data = await obj.json() as string[] | { uids?: string[] };
-                if (Array.isArray(data)) return data.length;
-                return data.uids?.length ?? 0;
+                return Array.isArray(data) ? data.length : (data.uids?.length ?? 0);
             } catch {
                 return 0;
             }
         })();
 
-        const [allUsers, allSessions, allGames, allTurns, allUserTraits] = await Promise.all([
-            listDocuments<UserDocument>(env.R2, 'entities/users/'),
-            listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
-            listDocuments<GameDocument>(env.R2, 'entities/games/'),
-            listDocuments<TurnDocument>(env.R2, 'entities/turns/'),
-            listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
+        // Enumerate scoped IDs via per-day indexes (no full-table scans).
+        const [scopedGameIds, scopedSessionIds, scopedFollowUpRefs] = await Promise.all([
+            Promise.all(dates.map(d => loadDateIndex(env.R2, `indexes/date-games/${d}.json`))).then(a => Array.from(new Set(a.flat()))),
+            Promise.all(dates.map(d => loadDateIndex(env.R2, `indexes/date-sessions/${d}.json`))).then(a => Array.from(new Set(a.flat()))),
+            Promise.all(dates.map(d => loadDateIndex(env.R2, `indexes/date-followups/${d}.json`))).then(a => a.flat()),
         ]);
+
+        // Fetch only the scoped game/session docs — bounded by scope size, not table size.
+        const [scopedGames, scopedSessions] = await Promise.all([
+            Promise.all(scopedGameIds.map(id => loadJson<GameDocument>(env.R2, `entities/games/${id}.json`))).then(a => a.filter((g): g is GameDocument => g !== null)),
+            Promise.all(scopedSessionIds.map(id => loadJson<SessionDocument>(env.R2, `entities/sessions/${id}.json`))).then(a => a.filter((s): s is SessionDocument => s !== null)),
+        ]);
+
+        // Users referenced by the scoped data (union of game uids and session uids).
+        const scopedUidSet = new Set<string>();
+        for (const g of scopedGames) scopedUidSet.add(g.uid);
+        for (const s of scopedSessions) scopedUidSet.add(s.uid);
+        const scopedUids = Array.from(scopedUidSet);
+
+        const [scopedUserDocs, scopedTraitDocs] = await Promise.all([
+            Promise.all(scopedUids.map(uid => loadJson<UserDocument>(env.R2, `entities/users/${uid}.json`))).then(a => a.filter((u): u is UserDocument => u !== null)),
+            Promise.all(scopedUids.map(uid => loadJson<UserTraitsDocument>(env.R2, `entities/user-traits/traits-${uid}.json`))).then(a => a.filter((t): t is UserTraitsDocument => t !== null)),
+        ]);
+
+        // Performance metric — fetch only scoped reading-turn docs (turn 1 of each scoped game)
+        // and follow-up turn docs referenced by the scoped follow-up index.
+        const [scopedReadingTurnDocs, scopedFollowUpTurnDocs] = await Promise.all([
+            Promise.all(scopedGameIds.map(id => loadJson<TurnDocument>(env.R2, `entities/turns/${id}/1.json`))).then(a => a.filter((t): t is TurnDocument => t !== null)),
+            Promise.all(scopedFollowUpRefs.map(ref => {
+                const slash = ref.indexOf('/');
+                if (slash < 0) return Promise.resolve(null);
+                const gid = ref.slice(0, slash);
+                const num = ref.slice(slash + 1);
+                return loadJson<TurnDocument>(env.R2, `entities/turns/${gid}/${num}.json`);
+            })).then(a => a.filter((t): t is TurnDocument => t !== null)),
+        ]);
+
+        // Totals across all time — counted via list() only, no per-object GETs.
+        const [totalUsers, totalSessions, totalGames, totalTurns] = await Promise.all([
+            countPrefix(env.R2, 'entities/users/'),
+            countPrefix(env.R2, 'entities/sessions/'),
+            countPrefix(env.R2, 'entities/games/'),
+            countPrefix(env.R2, 'entities/turns/'),
+        ]);
+        // Each game has exactly one reading turn (turn 1); the rest are follow-ups.
+        const totalFollowUps = Math.max(0, totalTurns - totalGames);
+
+        // Alias all the renamed variables so the rest of the existing aggregation logic still works.
+        const allUsers = scopedUserDocs;
+        const allSessions = scopedSessions;
+        const allGames = scopedGames;
+        const allUserTraits = scopedTraitDocs;
 
         const userNameByUid = new Map<string, string | null>();
         const userAliasByUid = new Map<string, string | null>();
@@ -157,69 +236,44 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             userAliasByUid.set(user.uid, user.adminAlias ?? null);
         }
 
-        // Fetch recent games (last 20)
-        const recentGamesPromise = (async () => {
-            const games: DashboardResponse['recentGames'] = [];
-            // Check last few date indexes
-            for (const date of dates.slice(0, 3)) {
-                const idx = await env.R2.get(`indexes/date-games/${date}.json`);
-                if (!idx) continue;
-                try {
-                    // date-games index stores [{ id, createdAt }]; accept legacy { gameIds } too.
-                    const data = await idx.json() as Array<{ id: string }> | { gameIds?: string[] };
-                    const ids = Array.isArray(data)
-                        ? data.map(e => e.id)
-                        : (data.gameIds ?? []);
-                    const gameIds = ids.slice(-10);
-                    for (const gid of gameIds) {
-                        const gObj = await env.R2.get(`entities/games/${gid}.json`);
-                        if (!gObj) continue;
-                        try {
-                            const g = await gObj.json() as Record<string, unknown>;
-                            const uid = g.uid as string;
-                            games.push({
-                                gameId: g.gameId as string,
-                                uid,
-                                userName: userNameByUid.get(uid) ?? null,
-                                userAlias: userAliasByUid.get(uid) ?? null,
-                                sessionId: g.sessionId as string,
-                                spreadType: g.spreadType as number,
-                                question: g.question as string | null,
-                                topic: g.topic as string | null,
-                                language: g.language as string,
-                                tone: g.tone as string,
-                                turnCount: g.turnCount as number,
-                                city: (g.location as { city?: string | null } | undefined)?.city ?? null,
-                                country: (g.location as { country?: string | null } | undefined)?.country ?? null,
-                                createdAt: g.createdAt as string,
-                            });
-                        } catch { /* skip malformed */ }
-                    }
-                } catch { /* skip */ }
-                if (games.length >= 20) break;
-            }
-            return games.slice(-20).reverse();
-        })();
+        // Recent games — last ~20 from the scoped pool, ordered newest first.
+        const recentGames: DashboardResponse['recentGames'] = scopedGames
+            .slice()
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, 20)
+            .map(g => ({
+                gameId: g.gameId,
+                uid: g.uid,
+                userName: userNameByUid.get(g.uid) ?? null,
+                userAlias: userAliasByUid.get(g.uid) ?? null,
+                sessionId: g.sessionId,
+                spreadType: g.spreadType,
+                question: g.question,
+                topic: g.topic,
+                language: g.language,
+                tone: g.tone,
+                turnCount: g.turnCount,
+                city: g.location?.city ?? null,
+                country: g.location?.country ?? null,
+                createdAt: g.createdAt,
+            }));
 
-        const [dailyResults, activeUsersToday, recentGames] = await Promise.all([
+        const [dailyResults, activeUsersToday] = await Promise.all([
             Promise.all(dailyPromises),
             activeUsersPromise,
-            recentGamesPromise,
         ]);
         const daily = dailyResults.filter((d): d is DailySummary => d !== null);
         const scopeStart = dates[dates.length - 1];
         const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
-        const scopedReadingTurns = allTurns.filter(turn => turn.turnType === 'reading' && isWithinScope(turn.createdAt));
 
         // Follow-up turns within the period, aggregated by user and by session.
         const sessionIdByGameId = new Map<string, string>();
         for (const game of allGames) {
             sessionIdByGameId.set(game.gameId, game.sessionId);
         }
-        const scopedFollowUpTurns = allTurns.filter(turn => turn.turnType === 'followup' && isWithinScope(turn.createdAt));
         const followUpsByUid = new Map<string, number>();
         const followUpsBySession = new Map<string, number>();
-        for (const turn of scopedFollowUpTurns) {
+        for (const turn of scopedFollowUpTurnDocs) {
             followUpsByUid.set(turn.uid, (followUpsByUid.get(turn.uid) ?? 0) + 1);
             const sid = sessionIdByGameId.get(turn.gameId);
             if (sid) {
@@ -228,7 +282,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
         }
         const providerBreakdown: Record<string, number> = {};
         let totalReadingMs = 0;
-        for (const turn of scopedReadingTurns) {
+        for (const turn of scopedReadingTurnDocs) {
             if (turn.responseTimeMs > 0) {
                 totalReadingMs += turn.responseTimeMs;
             }
@@ -237,27 +291,27 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         }
         const performance = {
-            avgResponseMs: scopedReadingTurns.length > 0 ? Math.round(totalReadingMs / scopedReadingTurns.length) : 0,
-            totalTurns: scopedReadingTurns.length,
+            avgResponseMs: scopedReadingTurnDocs.length > 0 ? Math.round(totalReadingMs / scopedReadingTurnDocs.length) : 0,
+            totalTurns: scopedReadingTurnDocs.length,
             providerBreakdown,
         };
 
-        // Aggregate totals
+        // Totals — totals.X.total comes from list-only counts (no GETs); scope from the filtered scoped data.
         const totals = {
             users: {
-                total: allUsers.length,
+                total: totalUsers,
                 scope: allUsers.filter(user => isWithinScope(user.firstSeenAt)).length,
             },
             readings: {
-                total: allGames.length,
+                total: totalGames,
                 scope: allGames.filter(game => isWithinScope(game.createdAt)).length,
             },
             followUps: {
-                total: allTurns.filter(turn => turn.turnType === 'followup').length,
-                scope: allTurns.filter(turn => turn.turnType === 'followup' && isWithinScope(turn.createdAt)).length,
+                total: totalFollowUps,
+                scope: scopedFollowUpTurnDocs.length,
             },
             sessions: {
-                total: allSessions.length,
+                total: totalSessions,
                 scope: allSessions.filter(session => isWithinScope(session.createdAt)).length,
             },
         };
@@ -273,11 +327,10 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .map(([language, count]) => ({ language, count }))
             .sort((a, b) => b.count - a.count);
 
-        // Filter entities to the selected date scope
-        const cutoff = dates[dates.length - 1]; // earliest date in range (YYYY-MM-DD)
+        // Scoped sets already came from per-day indexes; only users still need a
+        // last-seen filter to drop carried-over docs without any activity in the period.
+        const cutoff = dates[dates.length - 1];
         const scopedUsers = allUsers.filter(u => u.lastSeenAt >= cutoff);
-        const scopedSessions = allSessions.filter(s => s.createdAt >= cutoff);
-        const scopedGames = allGames.filter(g => g.createdAt >= cutoff);
 
         const sessionsByUid = new Map<string, SessionDocument[]>();
         for (const session of scopedSessions) {
@@ -431,6 +484,15 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             schemaVersion: WORKER_CONFIG.schemaVersion,
             workerVersion: WORKER_CONFIG.version,
         };
+
+        // Persist the cache. Best-effort — never block the response on a cache write failure.
+        try {
+            await env.R2.put(cacheKey, JSON.stringify({ ...response, cachedAt: new Date().toISOString() }), {
+                httpMetadata: { contentType: 'application/json' },
+            });
+        } catch (cacheErr) {
+            console.warn('Dashboard cache write failed:', cacheErr instanceof Error ? cacheErr.message : cacheErr);
+        }
 
         return Response.json(response);
     } catch (err) {
