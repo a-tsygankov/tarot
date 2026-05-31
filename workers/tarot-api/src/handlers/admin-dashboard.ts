@@ -1,35 +1,9 @@
 import type { Env } from '../env.js';
 import type { DailySummary, GameDocument, SessionDocument, TurnDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
-import { buildLocationKey, loadJson, requireAdmin } from './admin-helpers.js';
+import { buildLocationKey, listDocuments, loadJson, requireAdmin } from './admin-helpers.js';
+import { WORKER_CONFIG } from '../config.js';
 
 const CACHE_TTL_MS = 3 * 60 * 1000;
-
-interface IndexEntry { id: string; createdAt: string }
-
-/** Count objects under an R2 prefix without fetching their bodies. */
-async function countPrefix(r2: R2Bucket, prefix: string): Promise<number> {
-    let count = 0;
-    let cursor: string | undefined;
-    do {
-        const batch: R2Objects = await r2.list({ prefix, limit: 1000, cursor });
-        count += batch.objects.length;
-        cursor = batch.truncated ? (batch as { cursor?: string }).cursor : undefined;
-    } while (cursor);
-    return count;
-}
-
-/** Read a single date index (date-games / date-sessions / date-followups). Tolerates the legacy {gameIds}/{ids} shape. */
-async function loadDateIndex(r2: R2Bucket, key: string): Promise<string[]> {
-    const obj = await r2.get(key);
-    if (!obj) return [];
-    try {
-        const data = await obj.json() as IndexEntry[] | { gameIds?: string[]; ids?: string[] };
-        if (Array.isArray(data)) return data.map(e => e.id);
-        return data.gameIds ?? data.ids ?? [];
-    } catch {
-        return [];
-    }
-}
 
 /**
  * Dashboard data response.
@@ -137,7 +111,9 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
     const days = [1, 3, 7, 30].includes(requestedDays) ? requestedDays : 7;
     const force = url.searchParams.get('force') === '1';
 
-    const cacheKey = `cache/dashboard/days-${days}.json`;
+    // Cache key is version-scoped so that releases never serve a stale shape
+    // (e.g., v2.4.1 cached empty-scope responses; v2.4.2 must not return them).
+    const cacheKey = `cache/dashboard/${WORKER_CONFIG.version}/days-${days}.json`;
     if (!force) {
         try {
             const cached = await loadJson<DashboardResponse & { cachedAt?: string }>(env.R2, cacheKey);
@@ -176,58 +152,17 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         })();
 
-        // Enumerate scoped IDs via per-day indexes (no full-table scans).
-        const [scopedGameIds, scopedSessionIds, scopedFollowUpRefs] = await Promise.all([
-            Promise.all(dates.map(d => loadDateIndex(env.R2, `indexes/date-games/${d}.json`))).then(a => Array.from(new Set(a.flat()))),
-            Promise.all(dates.map(d => loadDateIndex(env.R2, `indexes/date-sessions/${d}.json`))).then(a => Array.from(new Set(a.flat()))),
-            Promise.all(dates.map(d => loadDateIndex(env.R2, `indexes/date-followups/${d}.json`))).then(a => a.flat()),
+        // Full-table scan. The earlier per-day-index approach only sees entities
+        // written after IndexWriter was introduced — historical data isn't indexed,
+        // so the scoped tables collapsed to empty. The R2 cache (above) is what
+        // makes the warm path fast; this cold-path scan is the previous behavior.
+        const [allUsers, allSessions, allGames, allTurns, allUserTraits] = await Promise.all([
+            listDocuments<UserDocument>(env.R2, 'entities/users/'),
+            listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
+            listDocuments<GameDocument>(env.R2, 'entities/games/'),
+            listDocuments<TurnDocument>(env.R2, 'entities/turns/'),
+            listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
         ]);
-
-        // Fetch only the scoped game/session docs — bounded by scope size, not table size.
-        const [scopedGames, scopedSessions] = await Promise.all([
-            Promise.all(scopedGameIds.map(id => loadJson<GameDocument>(env.R2, `entities/games/${id}.json`))).then(a => a.filter((g): g is GameDocument => g !== null)),
-            Promise.all(scopedSessionIds.map(id => loadJson<SessionDocument>(env.R2, `entities/sessions/${id}.json`))).then(a => a.filter((s): s is SessionDocument => s !== null)),
-        ]);
-
-        // Users referenced by the scoped data (union of game uids and session uids).
-        const scopedUidSet = new Set<string>();
-        for (const g of scopedGames) scopedUidSet.add(g.uid);
-        for (const s of scopedSessions) scopedUidSet.add(s.uid);
-        const scopedUids = Array.from(scopedUidSet);
-
-        const [scopedUserDocs, scopedTraitDocs] = await Promise.all([
-            Promise.all(scopedUids.map(uid => loadJson<UserDocument>(env.R2, `entities/users/${uid}.json`))).then(a => a.filter((u): u is UserDocument => u !== null)),
-            Promise.all(scopedUids.map(uid => loadJson<UserTraitsDocument>(env.R2, `entities/user-traits/traits-${uid}.json`))).then(a => a.filter((t): t is UserTraitsDocument => t !== null)),
-        ]);
-
-        // Performance metric — fetch only scoped reading-turn docs (turn 1 of each scoped game)
-        // and follow-up turn docs referenced by the scoped follow-up index.
-        const [scopedReadingTurnDocs, scopedFollowUpTurnDocs] = await Promise.all([
-            Promise.all(scopedGameIds.map(id => loadJson<TurnDocument>(env.R2, `entities/turns/${id}/1.json`))).then(a => a.filter((t): t is TurnDocument => t !== null)),
-            Promise.all(scopedFollowUpRefs.map(ref => {
-                const slash = ref.indexOf('/');
-                if (slash < 0) return Promise.resolve(null);
-                const gid = ref.slice(0, slash);
-                const num = ref.slice(slash + 1);
-                return loadJson<TurnDocument>(env.R2, `entities/turns/${gid}/${num}.json`);
-            })).then(a => a.filter((t): t is TurnDocument => t !== null)),
-        ]);
-
-        // Totals across all time — counted via list() only, no per-object GETs.
-        const [totalUsers, totalSessions, totalGames, totalTurns] = await Promise.all([
-            countPrefix(env.R2, 'entities/users/'),
-            countPrefix(env.R2, 'entities/sessions/'),
-            countPrefix(env.R2, 'entities/games/'),
-            countPrefix(env.R2, 'entities/turns/'),
-        ]);
-        // Each game has exactly one reading turn (turn 1); the rest are follow-ups.
-        const totalFollowUps = Math.max(0, totalTurns - totalGames);
-
-        // Alias all the renamed variables so the rest of the existing aggregation logic still works.
-        const allUsers = scopedUserDocs;
-        const allSessions = scopedSessions;
-        const allGames = scopedGames;
-        const allUserTraits = scopedTraitDocs;
 
         const userNameByUid = new Map<string, string | null>();
         const userAliasByUid = new Map<string, string | null>();
@@ -236,8 +171,20 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             userAliasByUid.set(user.uid, user.adminAlias ?? null);
         }
 
-        // Recent games — last ~20 from the scoped pool, ordered newest first.
-        const recentGames: DashboardResponse['recentGames'] = scopedGames
+        const [dailyResults, activeUsersToday] = await Promise.all([
+            Promise.all(dailyPromises),
+            activeUsersPromise,
+        ]);
+        const daily = dailyResults.filter((d): d is DailySummary => d !== null);
+        const scopeStart = dates[dates.length - 1];
+        const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
+
+        const scopedReadingTurns = allTurns.filter(t => t.turnType === 'reading' && isWithinScope(t.createdAt));
+        const scopedFollowUpTurns = allTurns.filter(t => t.turnType === 'followup' && isWithinScope(t.createdAt));
+
+        // Recent games — last 20 most recent overall (not scope-limited so the panel
+        // is never empty when a small scope window has no activity).
+        const recentGames: DashboardResponse['recentGames'] = allGames
             .slice()
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
             .slice(0, 20)
@@ -258,14 +205,6 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                 createdAt: g.createdAt,
             }));
 
-        const [dailyResults, activeUsersToday] = await Promise.all([
-            Promise.all(dailyPromises),
-            activeUsersPromise,
-        ]);
-        const daily = dailyResults.filter((d): d is DailySummary => d !== null);
-        const scopeStart = dates[dates.length - 1];
-        const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
-
         // Follow-up turns within the period, aggregated by user and by session.
         const sessionIdByGameId = new Map<string, string>();
         for (const game of allGames) {
@@ -273,7 +212,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
         }
         const followUpsByUid = new Map<string, number>();
         const followUpsBySession = new Map<string, number>();
-        for (const turn of scopedFollowUpTurnDocs) {
+        for (const turn of scopedFollowUpTurns) {
             followUpsByUid.set(turn.uid, (followUpsByUid.get(turn.uid) ?? 0) + 1);
             const sid = sessionIdByGameId.get(turn.gameId);
             if (sid) {
@@ -282,7 +221,7 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
         }
         const providerBreakdown: Record<string, number> = {};
         let totalReadingMs = 0;
-        for (const turn of scopedReadingTurnDocs) {
+        for (const turn of scopedReadingTurns) {
             if (turn.responseTimeMs > 0) {
                 totalReadingMs += turn.responseTimeMs;
             }
@@ -291,27 +230,26 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         }
         const performance = {
-            avgResponseMs: scopedReadingTurnDocs.length > 0 ? Math.round(totalReadingMs / scopedReadingTurnDocs.length) : 0,
-            totalTurns: scopedReadingTurnDocs.length,
+            avgResponseMs: scopedReadingTurns.length > 0 ? Math.round(totalReadingMs / scopedReadingTurns.length) : 0,
+            totalTurns: scopedReadingTurns.length,
             providerBreakdown,
         };
 
-        // Totals — totals.X.total comes from list-only counts (no GETs); scope from the filtered scoped data.
         const totals = {
             users: {
-                total: totalUsers,
+                total: allUsers.length,
                 scope: allUsers.filter(user => isWithinScope(user.firstSeenAt)).length,
             },
             readings: {
-                total: totalGames,
+                total: allGames.length,
                 scope: allGames.filter(game => isWithinScope(game.createdAt)).length,
             },
             followUps: {
-                total: totalFollowUps,
-                scope: scopedFollowUpTurnDocs.length,
+                total: allTurns.filter(t => t.turnType === 'followup').length,
+                scope: scopedFollowUpTurns.length,
             },
             sessions: {
-                total: totalSessions,
+                total: allSessions.length,
                 scope: allSessions.filter(session => isWithinScope(session.createdAt)).length,
             },
         };
@@ -327,10 +265,11 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .map(([language, count]) => ({ language, count }))
             .sort((a, b) => b.count - a.count);
 
-        // Scoped sets already came from per-day indexes; only users still need a
-        // last-seen filter to drop carried-over docs without any activity in the period.
+        // Filter entities to the selected date scope.
         const cutoff = dates[dates.length - 1];
         const scopedUsers = allUsers.filter(u => u.lastSeenAt >= cutoff);
+        const scopedSessions = allSessions.filter(s => s.createdAt >= cutoff);
+        const scopedGames = allGames.filter(g => g.createdAt >= cutoff);
 
         const sessionsByUid = new Map<string, SessionDocument[]>();
         for (const session of scopedSessions) {
