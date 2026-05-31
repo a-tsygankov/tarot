@@ -4,8 +4,17 @@ import { sharedStyles } from '../styles/shared.js';
 import type { AppServices } from '../../app/composition-root.js';
 
 type Tab = 'users' | 'sessions' | 'locations';
-type DetailKind = 'overview' | 'user' | 'reading' | 'session' | 'location';
+type DetailKind = 'user' | 'reading' | 'session' | 'location';
 type JsonMap = Record<string, any>;
+
+interface NavEntry {
+    kind: DetailKind;
+    id: string;
+    label: string;
+    detail: JsonMap | null;
+}
+
+const REFRESH_COOLDOWN_MS = 60_000;
 
 @customElement('dashboard-panel')
 export class DashboardPanelLite extends LitElement {
@@ -39,14 +48,18 @@ export class DashboardPanelLite extends LitElement {
         .grid { display:grid; grid-template-columns:minmax(110px,auto) 1fr; gap:.35em .9em; font-size:.85em; }
         .k { color:var(--text-faint); } .v { color:var(--text); word-break:break-word; }
         .crumbs { display:flex; gap:.45em; flex-wrap:wrap; align-items:center; color:var(--text-dim); font-size:.83em; margin-bottom:1em; }
+        .crumb-sep { color:var(--text-faint); }
         pre { margin:0; white-space:pre-wrap; word-break:break-word; font-size:.78em; color:var(--text); font-family:ui-monospace,Consolas,monospace; }
+        .progress { height:3px; width:100%; background:rgba(255,255,255,.04); border-radius:2px; overflow:hidden; margin-bottom:.7em; }
+        .progress-bar { height:100%; width:35%; background:linear-gradient(90deg, transparent, var(--gold) 50%, transparent); animation: progressSweep 1.2s ease-in-out infinite; }
+        @keyframes progressSweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(285%); } }
+        .toggle[disabled] { opacity:.5; cursor:not-allowed; }
     `];
 
     @property({ attribute: false }) services!: AppServices;
 
     @state() private data: JsonMap | null = null;
-    @state() private detail: JsonMap | null = null;
-    @state() private detailKind: DetailKind = 'overview';
+    @state() private navStack: NavEntry[] = [];
     @state() private tab: Tab = 'users';
     @state() private loading = false;
     @state() private detailLoading = false;
@@ -56,12 +69,20 @@ export class DashboardPanelLite extends LitElement {
     @state() private keyInput = '';
     @state() private days = 1;
     @state() private lastRefresh = '';
+    @state() private lastRefreshAt = 0;
+    @state() private now = Date.now();
     @state() private aliasDraft = '';
     @state() private aliasSaving = false;
 
     private adminKey = '';
-    private timer: ReturnType<typeof setInterval> | null = null;
+    private cooldownTimer: ReturnType<typeof setInterval> | null = null;
     private static readonly STORAGE_KEY = 'tarot_admin_key';
+
+    private get detail(): JsonMap | null { return this.navStack.length ? this.navStack[this.navStack.length - 1].detail : null; }
+    private get detailKind(): DetailKind | 'overview' { return this.navStack.length ? this.navStack[this.navStack.length - 1].kind : 'overview'; }
+    private get cooldownRemainingMs(): number { return Math.max(0, REFRESH_COOLDOWN_MS - (this.now - this.lastRefreshAt)); }
+    private get refreshDisabled(): boolean { return this.loading || this.cooldownRemainingMs > 0; }
+    private get inFlight(): boolean { return this.loading || this.detailLoading || this.validating || this.aliasSaving; }
 
     override connectedCallback(): void {
         super.connectedCallback();
@@ -70,16 +91,19 @@ export class DashboardPanelLite extends LitElement {
             this.adminKey = stored;
             void this.validateAndLoad(stored);
         }
+        // 1s tick keeps the refresh-cooldown countdown live without re-rendering otherwise.
+        this.cooldownTimer = setInterval(() => { this.now = Date.now(); }, 1000);
     }
 
     override disconnectedCallback(): void {
         super.disconnectedCallback();
-        if (this.timer) clearInterval(this.timer);
+        if (this.cooldownTimer) clearInterval(this.cooldownTimer);
     }
 
     override render() {
         return html`
             <div class="root">
+                ${this.inFlight ? html`<div class="progress"><div class="progress-bar"></div></div>` : nothing}
                 <div class="header">
                     <div>
                         <div class="title">Dashboard</div>
@@ -113,19 +137,21 @@ export class DashboardPanelLite extends LitElement {
     }
 
     private renderDashboard() {
+        if (this.navStack.length > 0 && this.detail) return this.renderDetail();
         if (this.detailLoading) return html`<div class="center" style="padding:3em 0;"><div class="spinner spinner-lg"></div></div>`;
-        if (this.detailKind !== 'overview' && this.detail) return this.renderDetail();
         const d = this.data;
         if (!d) return this.loading ? html`<div class="center" style="padding:3em 0;"><div class="spinner spinner-lg"></div></div>` : nothing;
         const totals = this.getObj(d, 'totals');
         const perf = this.getObj(d, 'performance');
         const scopeDays = Number(d.scopeDays ?? this.days);
+        const cooldown = Math.ceil(this.cooldownRemainingMs / 1000);
         return html`
             <div class="controls">
                 <div class="row">
-                    ${([1, 7, 30] as const).map(days => html`<button class="toggle ${this.days === days ? 'active' : ''}" @click=${() => this.changeDays(days)}>${days}d</button>`)}
-                    <button class="toggle" @click=${this.fetchDashboard}>Refresh</button>
-                    <button class="toggle" @click=${this.toggleAuto}>Auto</button>
+                    ${([1, 3, 7, 30] as const).map(days => html`<button class="toggle ${this.days === days ? 'active' : ''}" @click=${() => this.changeDays(days)}>${days}d</button>`)}
+                    <button class="toggle" ?disabled=${this.refreshDisabled} @click=${this.refreshNow}>
+                        ${cooldown > 0 ? `Refresh (${cooldown}s)` : 'Refresh'}
+                    </button>
                 </div>
                 ${this.lastRefresh ? html`<div class="subtle">Updated ${this.lastRefresh}</div>` : nothing}
             </div>
@@ -214,7 +240,7 @@ export class DashboardPanelLite extends LitElement {
         if (this.detailKind === 'user') {
             const user = this.getObj(d, 'user')!;
             const uid = String(user.uid ?? '');
-            return html`${this.crumb('User', this.userLabel(user.name, uid, user.adminAlias))}
+            return html`${this.crumb()}
                 <div class="panel"><div class="section">User Profile</div><div class="grid">
                     <span class="k">UID</span><span class="v">${user.uid}</span>
                     <span class="k">Name</span><span class="v">${user.name ?? '—'}</span>
@@ -242,7 +268,7 @@ export class DashboardPanelLite extends LitElement {
         if (this.detailKind === 'reading') {
             const game = this.getObj(d, 'game')!;
             const readingUser = this.getObj(d, 'user');
-            return html`${this.crumb('Reading', this.short(String(game.gameId ?? '')))}
+            return html`${this.crumb()}
                 <div class="panel"><div class="section">Reading Detail</div><div class="grid">
                     <span class="k">Reading ID</span><span class="v">${game.gameId}</span>
                     <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(game.uid))}>${this.userLabel(readingUser?.name, String(game.uid), readingUser?.alias)}</button></span>
@@ -255,7 +281,7 @@ export class DashboardPanelLite extends LitElement {
         if (this.detailKind === 'session') {
             const session = this.getObj(d, 'session')!;
             const sessionUser = this.getObj(d, 'user');
-            return html`${this.crumb('Session', this.short(String(session.sessionId ?? '')))}
+            return html`${this.crumb()}
                 <div class="panel"><div class="section">Session Detail</div><div class="grid">
                     <span class="k">User</span><span class="v"><button class="linkish" @click=${() => this.openDetail('user', String(session.uid))}>${this.userLabel(sessionUser?.name, String(session.uid), sessionUser?.adminAlias)}</button></span>
                     <span class="k">Location</span><span class="v">${[session.city, session.country].filter(Boolean).join(', ') || 'Unknown'}</span>
@@ -270,8 +296,7 @@ export class DashboardPanelLite extends LitElement {
                 <div class="panel"><div class="section">Readings In Session</div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Reading</th><th>Question</th><th>Location</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td>${this.time(g.createdAt)}</td><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td>${g.question ?? '-'}</td><td>${[g.location?.city, g.location?.country].filter(Boolean).join(', ') || '-'}</td></tr>`)}</tbody></table></div></div>
                 <div class="panel"><div class="section">All Questions And Answers</div><div class="stack">${this.getArr(d, 'turns').map((t: any) => html`<div><div class="subtle">${t.gameId} · ${t.turnType} · ${this.time(t.createdAt)}</div>${t.question ? html`<div class="subtle">${t.question}</div>` : nothing}<pre>${t.answerText}</pre></div>`)}</div></div>`;
         }
-        const location = this.getObj(d, 'location')!;
-        return html`${this.crumb('Location', [location.city, location.country].filter(Boolean).join(', '))}
+        return html`${this.crumb()}
             <div class="panel"><div class="section">Players In This Location</div><div class="stack">${this.getArr(d, 'users').map((u: any) => html`<details><summary>${this.userLabel(u.name, u.uid, u.alias)} · ${u.totalReadings} readings</summary><div class="pills"><button class="linkish" @click=${() => this.openDetail('user', u.uid)}>Open user</button>${this.traitEntries(u.userTraits).map(value => html`<span class="pill">${value}</span>`)}</div></details>`)}</div></div>
             <div class="panel"><div class="section">Sessions</div><div class="table-wrap"><table><thead><tr><th>Session</th><th>User</th><th>Readings</th><th>Questions</th></tr></thead><tbody>${this.getArr(d, 'sessions').map((s: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('session', s.sessionId)}>${this.short(s.sessionId)}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', s.uid)}>${this.userLabel(s.userName, s.uid, s.userAlias)}</button></td><td>${s.gameCount}</td><td>${s.questionCount}</td></tr>`)}</tbody></table></div></div>
             <div class="panel"><div class="section">Readings</div><div class="table-wrap"><table><thead><tr><th>Reading</th><th>User</th><th>Session</th><th>Question</th></tr></thead><tbody>${this.getArr(d, 'games').map((g: any) => html`<tr><td><button class="linkish" @click=${() => this.openDetail('reading', g.gameId)}>${g.gameId}</button></td><td><button class="linkish" @click=${() => this.openDetail('user', g.uid)}>${this.userLabel(g.userName, g.uid, g.userAlias)}</button></td><td><button class="linkish" @click=${() => this.openDetail('session', g.sessionId)}>${this.short(g.sessionId)}</button></td><td>${g.question ?? '-'}</td></tr>`)}</tbody></table></div></div>`;
@@ -283,15 +308,34 @@ export class DashboardPanelLite extends LitElement {
         return html`<div class="stat"><div class="value">${value ?? '-'}${typeof scope === 'number' && scope > 0 ? html`<span class="scope-add">+${scope}</span>` : nothing}</div><div class="subtle">${label}</div></div>`;
     }
     private tabBtn(tab: Tab, label: string) { return html`<button class="toggle ${this.tab === tab ? 'active' : ''}" @click=${() => { this.tab = tab; }}>${label}</button>`; }
-    private crumb(label: string, value: string) { return html`<div class="crumbs"><button class="linkish" @click=${this.back}>Dashboard</button><span>/</span><span>${label}</span><span>/</span><span>${value}</span></div>`; }
+    private crumb() {
+        const labelFor = (kind: DetailKind) => kind === 'reading' ? 'Reading' : kind[0].toUpperCase() + kind.slice(1);
+        return html`<div class="crumbs">
+            <button class="linkish" @click=${this.goHome}>Dashboard</button>
+            ${this.navStack.map((entry, i) => {
+                const isLast = i === this.navStack.length - 1;
+                return html`<span class="crumb-sep">/</span>
+                    <span>${labelFor(entry.kind)}</span>
+                    <span class="crumb-sep">/</span>
+                    ${isLast
+                        ? html`<span>${entry.label}</span>`
+                        : html`<button class="linkish" @click=${() => this.popTo(i + 1)}>${entry.label}</button>`}`;
+            })}
+            ${this.navStack.length > 1
+                ? html`<button class="btn btn-ghost" style="margin-left:.5em;" @click=${this.goBack}>← Back</button>`
+                : nothing}
+        </div>`;
+    }
     private detailList(title: string, values: string[]) { return values.length ? html`<details><summary>${title} (${values.length})</summary><div class="pills">${values.map(v => html`<span class="pill">${v}</span>`)}</div></details>` : html`<span class="subtle">None</span>`; }
     private detailActionList(title: string, values: string[], fn: (value: string) => void) { return values.length ? html`<details><summary>${title} (${values.length})</summary><div class="pills">${values.map(v => html`<button class="linkish" @click=${() => fn(v)}>${v}</button>`)}</div></details>` : html`<span class="subtle">None</span>`; }
 
     private onSubmit = async (event: Event) => { event.preventDefault(); if (this.keyInput.trim()) await this.validateAndLoad(this.keyInput.trim()); };
-    private logout = () => { this.authenticated = false; this.adminKey = ''; this.data = null; this.detail = null; this.detailKind = 'overview'; this.error = ''; localStorage.removeItem(DashboardPanelLite.STORAGE_KEY); if (this.timer) clearInterval(this.timer); };
-    private back = () => { this.detail = null; this.detailKind = 'overview'; this.error = ''; };
+    private logout = () => { this.authenticated = false; this.adminKey = ''; this.data = null; this.navStack = []; this.error = ''; localStorage.removeItem(DashboardPanelLite.STORAGE_KEY); };
+    private goHome = () => { this.navStack = []; this.error = ''; };
+    private goBack = () => { if (this.navStack.length === 0) return; this.navStack = this.navStack.slice(0, -1); this.error = ''; };
+    private popTo = (depth: number) => { this.navStack = this.navStack.slice(0, depth); this.error = ''; };
     private changeDays(days: number) { this.days = days; void this.fetchDashboard(); }
-    private toggleAuto = () => { if (this.timer) { clearInterval(this.timer); this.timer = null; return; } this.timer = setInterval(() => void this.fetchDashboard(), 60_000); };
+    private refreshNow = () => { if (this.refreshDisabled) return; void this.fetchDashboard({ force: true }); };
 
     private async validateAndLoad(key: string): Promise<void> {
         this.validating = true; this.error = '';
@@ -307,11 +351,15 @@ export class DashboardPanelLite extends LitElement {
         }
     }
 
-    private fetchDashboard = async (): Promise<void> => {
+    private fetchDashboard = async (options?: { force?: boolean }): Promise<void> => {
         if (!this.adminKey || this.loading) return;
         this.loading = true; this.error = '';
         try {
-            this.data = await this.fetchJson(`/api/admin/dashboard?days=${this.days}`); this.lastRefresh = new Date().toLocaleTimeString();
+            const force = options?.force ? '&force=1' : '';
+            this.data = await this.fetchJson(`/api/admin/dashboard?days=${this.days}${force}`);
+            this.lastRefresh = new Date().toLocaleTimeString();
+            this.lastRefreshAt = Date.now();
+            this.now = Date.now();
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);
         } finally {
@@ -319,20 +367,44 @@ export class DashboardPanelLite extends LitElement {
         }
     };
 
-    private async openDetail(kind: Exclude<DetailKind, 'overview'>, id: string): Promise<void> {
+    private async openDetail(kind: DetailKind, id: string): Promise<void> {
         this.detailLoading = true; this.error = '';
         try {
             const apiKind = kind === 'reading' ? 'game' : kind;
-            this.detail = await this.fetchJson(`/api/admin/${apiKind}/${id}`);
-            this.detailKind = kind;
+            const detail = await this.fetchJson(`/api/admin/${apiKind}/${id}`);
+            const label = this.deriveLabel(kind, detail, id);
+            const entry: NavEntry = { kind, id, label, detail };
+            const top = this.navStack[this.navStack.length - 1];
+            // Re-opening the same entry (e.g., after saving an alias) refreshes in place
+            // instead of pushing a duplicate level onto the stack.
+            this.navStack = top && top.kind === kind && top.id === id
+                ? [...this.navStack.slice(0, -1), entry]
+                : [...this.navStack, entry];
             if (kind === 'user') {
-                this.aliasDraft = String(this.getObj(this.detail, 'user')?.adminAlias ?? '');
+                this.aliasDraft = String(this.getObj(detail, 'user')?.adminAlias ?? '');
             }
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);
         } finally {
             this.detailLoading = false;
         }
+    }
+
+    private deriveLabel(kind: DetailKind, detail: JsonMap, fallback: string): string {
+        if (kind === 'user') {
+            const user = this.getObj(detail, 'user');
+            return this.userLabel(user?.name, String(user?.uid ?? fallback), user?.adminAlias);
+        }
+        if (kind === 'session') {
+            const session = this.getObj(detail, 'session');
+            return this.short(String(session?.sessionId ?? fallback));
+        }
+        if (kind === 'reading') {
+            const game = this.getObj(detail, 'game');
+            return this.short(String(game?.gameId ?? fallback));
+        }
+        const loc = this.getObj(detail, 'location');
+        return [loc?.city, loc?.country].filter(Boolean).join(', ') || fallback;
     }
 
     private async saveAlias(uid: string): Promise<void> {
