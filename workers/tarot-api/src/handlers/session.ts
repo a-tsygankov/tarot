@@ -4,7 +4,8 @@ import { WORKER_CONFIG } from '../config.js';
 import type { R2UserRepository } from '../repositories/user-repository.js';
 import type { R2AnalyticsRepository } from '../repositories/analytics-repository.js';
 import type { IndexWriter } from '../services/index-writer.js';
-import { r2PutJson } from '../services/r2-adapter.js';
+import { r2PutJsonWithMeta } from '../services/r2-adapter.js';
+import { buildSessionMetadata } from '../services/entity-metadata.js';
 
 export interface SessionDeps {
     users: R2UserRepository;
@@ -27,7 +28,7 @@ export async function handleSession(request: Request, env: Env, deps: SessionDep
 
         // Write session document
         const sessionDoc = {
-            type: 'session',
+            type: 'session' as const,
             schemaVersion: WORKER_CONFIG.schemaVersion,
             sessionId: body.sessionId,
             uid: body.uid,
@@ -43,7 +44,12 @@ export async function handleSession(request: Request, env: Env, deps: SessionDep
             screenHeight: body.screenHeight ?? null,
         };
 
-        await r2PutJson(env.R2, `entities/sessions/${body.sessionId}.json`, sessionDoc);
+        await r2PutJsonWithMeta(
+            env.R2,
+            `entities/sessions/${body.sessionId}.json`,
+            sessionDoc,
+            buildSessionMetadata(sessionDoc),
+        );
 
         // Upsert user via repository.
         // Only pass name when the client actually has one — passing null would clear a previously

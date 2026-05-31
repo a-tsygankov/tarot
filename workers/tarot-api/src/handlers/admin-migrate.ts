@@ -1,7 +1,13 @@
 import type { Env } from '../env.js';
-import type { BaseDocument, SchemaVersionDescriptor } from '@shared/contracts/entity-contracts.js';
+import type { BaseDocument, GameDocument, SchemaVersionDescriptor, SessionDocument, TurnDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
 import { R2SchemaRepository } from '../repositories/schema-repository.js';
 import { SchemaService } from '../services/schema-service.js';
+import {
+    buildGameMetadata,
+    buildSessionMetadata,
+    buildTurnMetadata,
+    buildUserMetadata,
+} from '../services/entity-metadata.js';
 
 /**
  * POST /api/admin/schema/activate — activate a new schema version.
@@ -145,7 +151,8 @@ export async function handleReindex(request: Request, env: Env): Promise<Respons
     }
 
     try {
-        const { type } = await request.json() as { type: string };
+        const body = await request.json() as { type: string; prefix?: string };
+        const { type, prefix } = body;
 
         if (type === 'user-games') {
             return await reindexUserGames(env.R2);
@@ -155,6 +162,8 @@ export async function handleReindex(request: Request, env: Env): Promise<Respons
             return await reindexActiveUsers(env.R2);
         } else if (type === 'date-sessions') {
             return await reindexDateSessions(env.R2);
+        } else if (type === 'metadata') {
+            return await backfillMetadata(env.R2, prefix);
         }
 
         return Response.json({ error: `Unknown index type: ${type}` }, { status: 400 });
@@ -275,4 +284,78 @@ async function reindexDateSessions(r2: R2Bucket): Promise<Response> {
 
 function checkAdminAuth(request: Request, env: Env): boolean {
     return request.headers.get('X-Admin-Key') === env.ANALYTICS_KEY;
+}
+
+// ── Metadata backfill ────────────────────────────────────────────────
+//
+// Rewrites every entity under a single prefix with the customMetadata that
+// the dashboard now reads via list(). One prefix per call so the subrequest
+// total (~2 per object: list + GET + PUT amortized) fits under Cloudflare's
+// 1000/invocation limit for our current data volumes. Idempotent: objects
+// whose metadata already has `metaV === '1'` are skipped.
+//
+// Operator workflow after deploying v2.4.4:
+//   POST /api/admin/reindex {type:"metadata", prefix:"entities/users/"}
+//   POST /api/admin/reindex {type:"metadata", prefix:"entities/sessions/"}
+//   POST /api/admin/reindex {type:"metadata", prefix:"entities/games/"}
+//   POST /api/admin/reindex {type:"metadata", prefix:"entities/turns/"}
+
+type MetaBuilder = (doc: unknown) => Record<string, string>;
+
+const META_BUILDERS: Record<string, MetaBuilder> = {
+    'entities/users/':    (doc) => buildUserMetadata(doc as UserDocument),
+    'entities/sessions/': (doc) => buildSessionMetadata(doc as SessionDocument),
+    'entities/games/':    (doc) => buildGameMetadata(doc as GameDocument),
+    'entities/turns/':    (doc) => buildTurnMetadata(doc as TurnDocument),
+};
+
+async function backfillMetadata(r2: R2Bucket, prefix?: string): Promise<Response> {
+    if (!prefix || !(prefix in META_BUILDERS)) {
+        return Response.json(
+            { error: `prefix must be one of: ${Object.keys(META_BUILDERS).join(', ')}` },
+            { status: 400 },
+        );
+    }
+    const build = META_BUILDERS[prefix];
+
+    let scanned = 0;
+    let written = 0;
+    let skipped = 0;
+    const errors: Array<{ key: string; error: string }> = [];
+    let cursor: string | undefined;
+
+    do {
+        const opts = { prefix, cursor, limit: 1000, include: ['customMetadata'] } as unknown as R2ListOptions;
+        const batch = await r2.list(opts);
+        for (const obj of batch.objects) {
+            scanned++;
+            if (obj.customMetadata?.metaV === '1') {
+                skipped++;
+                continue;
+            }
+            try {
+                const got = await r2.get(obj.key);
+                if (!got) continue;
+                const doc = await got.json();
+                await r2.put(obj.key, JSON.stringify(doc), {
+                    httpMetadata: { contentType: 'application/json' },
+                    customMetadata: build(doc),
+                });
+                written++;
+            } catch (err) {
+                errors.push({ key: obj.key, error: err instanceof Error ? err.message : String(err) });
+            }
+        }
+        cursor = batch.truncated ? batch.cursor : undefined;
+    } while (cursor);
+
+    return Response.json({
+        ok: true,
+        type: 'metadata',
+        prefix,
+        scanned,
+        written,
+        skipped,
+        errors: errors.slice(0, 20),
+    });
 }
