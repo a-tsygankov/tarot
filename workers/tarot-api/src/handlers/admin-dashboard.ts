@@ -1,9 +1,10 @@
 import type { Env } from '../env.js';
-import type { DailySummary, GameDocument, SessionDocument, TurnDocument, UserDocument, UserTraitsDocument } from '@shared/contracts/entity-contracts.js';
+import type { DailySummary, GameDocument, SessionDocument, TurnDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
+import type { TraitValueMap } from '@shared/contracts/api-contracts.js';
 import { buildLocationKey, listDocuments, loadJson, requireAdmin } from './admin-helpers.js';
 import { WORKER_CONFIG } from '../config.js';
 
-const CACHE_TTL_MS = 3 * 60 * 1000;
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Dashboard data response.
@@ -152,16 +153,17 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             }
         })();
 
-        // Full-table scan. The earlier per-day-index approach only sees entities
-        // written after IndexWriter was introduced — historical data isn't indexed,
-        // so the scoped tables collapsed to empty. The R2 cache (above) is what
-        // makes the warm path fast; this cold-path scan is the previous behavior.
-        const [allUsers, allSessions, allGames, allTurns, allUserTraits] = await Promise.all([
+        // Cold-path full-table scan. Turn docs and user-traits docs are deliberately
+        // skipped here — they push us past Cloudflare's 1000-subrequest/invocation
+        // limit (users + sessions + games + turns + traits ≈ 1000 GETs at current
+        // volume). Per-turn metrics (avgResponseMs, providerBreakdown, per-user
+        // scoped follow-up counts) degrade to 0/empty; user-traits are lazy-loaded
+        // by the per-user detail endpoint. Top-level follow-up totals come from
+        // user.stats.totalFollowUps and daily summaries instead.
+        const [allUsers, allSessions, allGames] = await Promise.all([
             listDocuments<UserDocument>(env.R2, 'entities/users/'),
             listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
             listDocuments<GameDocument>(env.R2, 'entities/games/'),
-            listDocuments<TurnDocument>(env.R2, 'entities/turns/'),
-            listDocuments<UserTraitsDocument>(env.R2, 'entities/user-traits/'),
         ]);
 
         const userNameByUid = new Map<string, string | null>();
@@ -179,8 +181,15 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
         const scopeStart = dates[dates.length - 1];
         const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
 
-        const scopedReadingTurns = allTurns.filter(t => t.turnType === 'reading' && isWithinScope(t.createdAt));
-        const scopedFollowUpTurns = allTurns.filter(t => t.turnType === 'followup' && isWithinScope(t.createdAt));
+        // Per-turn data is no longer scanned (see comment above). These remain
+        // empty placeholders so the downstream aggregation shape is unchanged.
+        const scopedReadingTurns: TurnDocument[] = [];
+        const scopedFollowUpTurns: TurnDocument[] = [];
+
+        // Total/scope follow-up counts come from user docs and daily summaries
+        // since we no longer scan turn docs.
+        const totalFollowUpsAllTime = allUsers.reduce((sum, u) => sum + (u.stats?.totalFollowUps ?? 0), 0);
+        const scopedFollowUpsFromDaily = daily.reduce((sum, d) => sum + (d.followUps ?? 0), 0);
 
         // Recent games — last 20 most recent overall (not scope-limited so the panel
         // is never empty when a small scope window has no activity).
@@ -245,8 +254,8 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
                 scope: allGames.filter(game => isWithinScope(game.createdAt)).length,
             },
             followUps: {
-                total: allTurns.filter(t => t.turnType === 'followup').length,
-                scope: scopedFollowUpTurns.length,
+                total: totalFollowUpsAllTime,
+                scope: scopedFollowUpsFromDaily,
             },
             sessions: {
                 total: allSessions.length,
@@ -285,10 +294,9 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             gamesByUid.set(game.uid, current);
         }
 
-        const traitsByUserId = new Map<string, UserTraitsDocument>();
-        for (const traits of allUserTraits) {
-            traitsByUserId.set(traits.userId, traits);
-        }
+        // Traits are lazy-loaded by the per-user detail endpoint to keep the dashboard
+        // request under Cloudflare's subrequest limit.
+        const traitsByUserId = new Map<string, { traits: TraitValueMap }>();
 
         const users = scopedUsers
             .map(user => {
