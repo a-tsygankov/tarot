@@ -1,119 +1,142 @@
-# Handoff — dev-7
+# Handoff — 2026-05-31
 
-Working branch: `dev-7` (cut from `dev`).
+Dashboard performance + correctness + structural cleanup. Five PRs landed in a
+single day starting from `main` at v2.4.0, each on its own short-lived branch.
+Final shipped version (in progress as of this handoff): **v2.4.4**.
 
-This document is updated **before** and **after** the implementation described below.
+## Architecture recap (current state)
 
-## Architecture recap (relevant slices)
-
-- **Client**: Lit + TypeScript (`client/src`). Root shell `ui/components/tarot-app.ts`.
-  - Card flow: `card-spread.ts` draws cards into `models/GameContext.ts`; `reading-display.ts`
-    shows the AI reading; `followup-chat.ts` handles follow-up Q&A.
-  - `services/ApiService.ts` → `POST /api/reading`, `POST /api/followup`.
-  - Admin dashboard UI: `ui/components/dashboard-panel-lite.ts` (tag `<dashboard-panel>`,
-    tabs: Users / Sessions / Locations + Recent Readings + drill-down detail views).
+- **Client** (Lit + TS, `client/src`). Root shell `ui/components/tarot-app.ts`.
+  Admin dashboard component: `ui/components/dashboard-panel-lite.ts` (tag
+  `<dashboard-panel>`). The legacy 1411-line `dashboard-panel.ts` was deleted.
 - **Worker** (`workers/tarot-api/src`): Cloudflare Worker, R2-backed.
-  - Handlers: `reading.ts`, `followup.ts`, `session.ts`, `admin-dashboard.ts`, `admin-users.ts`.
-  - Prompts: `prompts.ts` (`buildReadingPrompt`, `buildFollowUpPrompt`).
-  - Repos: `user-repository.ts`, `game-repository.ts`; materialized indexes via
-    `services/index-writer.ts` (`indexes/date-games/*`, `indexes/user-games/*`,
-    `indexes/active-users/*`). Reindex in `handlers/admin-migrate.ts`.
-- **Shared contracts**: `shared/contracts/api-contracts.ts`, `shared/contracts/entity-contracts.ts`,
-  `shared/models/game-context.ts`.
+  - Handlers: `reading.ts`, `followup.ts`, `session.ts`, `admin-dashboard.ts`,
+    `admin-users.ts`, `admin-migrate.ts`.
+  - Repos: `user-repository.ts`, `game-repository.ts`, `user-traits-repository.ts`.
+  - Services: `index-writer.ts` (materialized indexes),
+    `schema-upgrade-service.ts`, **new** `entity-metadata.ts`,
+    `request-timing.ts`, `r2-adapter.ts`.
+- **Shared contracts**: `shared/contracts/api-contracts.ts`,
+  `entity-contracts.ts`.
 
-## Tasks (with interpretations)
+## PRs landed today
 
-### Dashboard
-1. **Hide zero-reading rows in the period.** Users/sessions with 0 readings *within the
-   selected period* are excluded from the Users and Sessions tabs. (Locations already only
-   list places that have games.)
-2. **Add database indexes for time.** Fix the broken date-index readers
-   (`date-games` and `active-users` were read with the wrong shape, so they always returned
-   empty) and add date-bucketed indexes for sessions and follow-ups, wired into the
-   session/followup handlers + reindex. Index entries carry `createdAt` (time).
-3. **Separate columns for readings / questions / follow-ups.** Period-scoped counts shown as
-   distinct columns in the Users and Sessions tabs.
-4. **Admin aliases.** Admin can set an alias on a user. Stored server-side
-   (`UserDocument.adminAlias`). Display rule: if the user has their own `name`, show
-   `name / alias`; otherwise show the alias; otherwise the short uid.
+### PR #21 — Dashboard nav stack + 3d + indexed aggregation (v2.4.1) ⚠ broken in prod
+- Client: nav stack with clickable breadcrumbs and a Back button; 3d range
+  tab; removed Auto poll; 60s refresh cooldown with live countdown;
+  indeterminate progress bar; deleted legacy `dashboard-panel.ts`.
+- Worker: response cache (3-min TTL, `?force=1` bypass);
+  `ctx.waitUntil(recordRequestTiming(...))` middleware writes per-request JSON
+  under `analytics/request-timings/{date}/`; **refactored aggregation to use
+  per-day indexes (`date-games`/`date-sessions`/`date-followups`)** — this is
+  what broke production because the date indexes were never backfilled for
+  historical entities, so the dashboard returned correct totals but empty
+  Users/Sessions/Locations/Top-Languages panels.
+- Schema bumped to `2026.05.31-01`.
 
-### Gameplay — Clarification cards (scoped to single-card spreads)
-5. For a single-card reading show a **Clarification** layout of two face-down cards. Revealing
-   either draws a real card and **re-requests the reading**, with the prompt insisting on a
-   clearer, more decisive answer that integrates the 1–2 clarification cards. The per-card
-   `reading.cards` array stays limited to the original spread position; clarification meaning
-   is folded into that interpretation + the overall synthesis.
-6. **Same mechanic in the follow-up view** (single-card games): revealing a clarification card
-   re-asks the most recent follow-up question (or a default "give a clearer answer" prompt)
-   with the clarification card(s) in context.
-7. Update `handoff.md` before and after (this file).
+### PR #22 — Hotfix: revert to full-table scans (v2.4.2)
+- Reverted the v2.4.1 indexed aggregation to the prior `listDocuments`
+  approach. Kept the cache, `?force=1`, `days=3` acceptance, request-timing,
+  and all v2.4.1 client UI changes.
+- Cache key now version-scoped (`cache/dashboard/{version}/days-{N}.json`) so
+  a broken cache from a previous version can't be served.
+- `recentGames` now shows the 20 most recent overall (not scope-limited).
+- Schema → `2026.05.31-02`.
 
-## Implementation plan / files
+### PR #23 — Subrequest-limit fix + auto-refresh (v2.4.3)
+- Worker: live dashboard was throwing `Too many API requests by single Worker
+  invocation` because the full-table scan hit Cloudflare's 1000-subreq cap
+  (49 users + 482 sessions + 189 games + ~220 turns + 49 traits ≈ 1000 GETs).
+  Dropped the per-turn and user-traits scans:
+  - `performance.avgResponseMs` / `providerBreakdown` → `0` / `{}`.
+  - `users[].userTraits` → `{}` (lazy-loaded by the per-user detail endpoint).
+  - `users[].followUpsInPeriod` / `sessions[].followUpCount` → `0`.
+  - `totals.followUps.total` from `user.stats.totalFollowUps`,
+    `totals.followUps.scope` from `DailySummary.followUps`.
+- Client: dashboard auto-refreshes every **5 min** in the background; manual
+  Refresh still works (60s cooldown) and resets the auto-refresh timer.
+  `days` selection persisted in `localStorage` under `tarot_dashboard_days`.
+- Cache TTL 3 → 5 min to match auto-refresh.
+- Schema → `2026.05.31-03`.
 
-- Shared: `api-contracts.ts` (`GameContextPayload.clarificationCards`),
-  `entity-contracts.ts` (`UserDocument.adminAlias`, `GameDocument.clarificationCards`),
-  `models/game-context.ts` (`IGameContext.clarificationCards`).
-- Client: new `app/deck.ts` (card pool + `drawRandomCard`); `models/GameContext.ts`
-  (clarification state + payload); new `ui/components/clarification-cards.ts`;
-  `reading-display.ts` + `followup-chat.ts` integration; `dashboard-panel-lite.ts`
-  (columns, alias editor, alias-aware labels); `ApiService.ts` no signature change.
-- Worker: `prompts.ts` (clarification instruction), `reading.ts` + `followup.ts`
-  (clarification section + best-effort persistence), `game-repository.ts`
-  (`clarificationCards`), `user-repository.ts` (`setAlias`),
-  `services/index-writer.ts` (date session/followup indexes), `handlers/admin-dashboard.ts`
-  (zero-reading filter, period counts, alias, fixed index readers),
-  `handlers/admin-users.ts` (alias endpoint + alias in detail),
-  `handlers/admin-migrate.ts` (reindex new indexes), `index.ts` (alias route).
+### PR #24 — Docs: migration-script rule (no version bump)
+- `CLAUDE.md`: any PR touching schema or introducing/changing an R2 index
+  must ship a one-time migration that updates **all existing data, including
+  historical**, not just data created after the change. Points future PRs at
+  `schema-upgrade-service.ts` (auto pipeline, idempotent) and
+  `/api/admin/reindex` in `admin-migrate.ts` (admin-triggered).
 
-## Status — DONE
+### PR #25 — customMetadata + list() + drop sessions + Readings tab (v2.4.4) — *current branch*
+- **Storage:** every entity write now stamps R2 `customMetadata` (via new
+  `services/entity-metadata.ts` + `r2-adapter.r2PutJsonWithMeta`). Centralized
+  per-entity builders: `buildUserMetadata`, `buildSessionMetadata`,
+  `buildGameMetadata`, `buildTurnMetadata`. Each stamps `metaV: '1'` so
+  future migrations can detect old shapes. Values are stringified;
+  non-ASCII fields are `encodeURIComponent`-ed.
+- **Dashboard handler:** `admin-dashboard.ts` rewritten end-to-end to read
+  via `listWithMetadata` (one subrequest per 1000 objects). Cold dashboard
+  drops from ~1003 subrequests to ~12.
+  - **Sessions removed as a first-class concept.** No `totals.sessions`, no
+    `sessions[]` in the response, no `locations[].sessionCount`. Session info
+    that mattered (e.g. `sessionId` per game) is still on the reading row.
+  - **Readings elevated to first-class** with a new `readings[]` array
+    (replaces the old `recentGames` + `sessions[]` overlap): every in-scope
+    reading with user, question, location, language, follow-up count, time.
+  - `performance.avgResponseMs`/`providerBreakdown` restored (turn metadata
+    is now cheap to read).
+  - `users[].followUpsInPeriod` restored (from scoped follow-up turns).
+- **Client UI:**
+  - Stat cards: Users / Readings / Follow-ups / Active Today / Avg Reading.
+    Sessions card removed.
+  - Tabs: Users / **Readings** / Locations. Sessions tab replaced by
+    Readings tab.
+  - Users tab table: no Sessions column; new "Recent Readings" column with
+    drill-in.
+  - Locations tab table: no Sessions column.
+  - User detail panel: Sessions sub-panel removed; Readings table no longer
+    shows a Session column.
+  - Reading detail panel: Session shown as plain text (no longer clickable).
+  - Location detail panel: Sessions table removed.
+  - The session-detail render path is left in place (deep-link compat); UI
+    no longer triggers `openDetail('session', ...)` anywhere.
+- **Migration:** new `/api/admin/reindex {type:"metadata", prefix:"..."}`
+  endpoint (`handlers/admin-migrate.ts: backfillMetadata`). Per the
+  migration-script rule, the operator runs it once per prefix post-deploy:
 
-All tasks implemented on `dev-7`. Summary of what landed:
+  ```
+  POST /api/admin/reindex {type:"metadata", prefix:"entities/users/"}
+  POST /api/admin/reindex {type:"metadata", prefix:"entities/sessions/"}
+  POST /api/admin/reindex {type:"metadata", prefix:"entities/games/"}
+  POST /api/admin/reindex {type:"metadata", prefix:"entities/turns/"}
+  ```
 
-### Gameplay — clarification cards
-- Shared: `GameContextPayload.clarificationCards?`, `IGameContext.clarificationCards`,
-  `GameDocument.clarificationCards?`.
-- New `client/src/app/deck.ts` (card pool + `drawRandomCard`); `card-spread.ts` now uses it.
-- `GameContext`: `clarificationCards`, `canAddClarification` (single-card + <2),
-  `usedCardNames()`, `addClarificationCard()`; included in `toApiPayload`,
-  `toPromptContext`, `normalizeCards`, `reset`.
-- New `clarification-cards.ts` component (two slots; next slot tappable; emits `reveal`).
-- `reading-display.ts`: shows clarification layout for single-card readings; revealing draws a
-  card and **re-requests the reading** (`_clarifying` spinner).
-- `followup-chat.ts`: shows the same layout for single-card games while turns remain; revealing
-  re-asks the last question (or a default "clearer answer" prompt) with the card in context.
-- Worker: `PROMPTS.clarificationInstruction`; `reading.ts` + `followup.ts` append a
-  `CLARIFICATION CARDS:` block + the instruction when present; `game-repository.ts`
-  (`createGame`/`applyReading`) persist `clarificationCards`. The oracle is told to keep
-  `reading.cards` limited to the original spread position and fold clarification into the
-  per-card text + overall synthesis (keeps the UI's card-to-reading mapping intact).
+  Each pass is idempotent (objects whose customMetadata already has
+  `metaV === '1'` are skipped). Until backfilled, dashboard panels for the
+  un-migrated prefixes will appear empty — only entities written *after*
+  v2.4.4 will surface. **The backfill is a required step of this rollout.**
+- No schema-version bump (the metadata layer is index-like, not a schema
+  change). Client + worker → **2.4.4**.
 
-### Dashboard
-- **Zero-reading filter**: `admin-dashboard.ts` drops users with `readingsInPeriod === 0` and
-  sessions with `gameCount === 0` (period-scoped).
-- **Separate columns**: Users tab → Readings / Questions / Follow-ups (period counts);
-  Sessions tab → Readings / Questions / Follow-ups + Device. Server adds
-  `readingsInPeriod`, `questionsInPeriod`, `followUpsInPeriod` (users) and `followUpCount`
-  (sessions), aggregating follow-up turns by uid and by session.
-- **Aliases**: `UserDocument.adminAlias`; `user-repository.setAlias()`; endpoint
-  `POST /api/admin/user/:uid/alias` (`handleAdminSetUserAlias` + route in `index.ts`); alias
-  surfaced in dashboard/user/session/location/game responses. Client label rule
-  `userLabel(name, uid, alias)` → `name / alias` when both, else whichever, else short uid;
-  user-detail view has an alias editor (Save/Clear).
-- **Time indexes**: fixed the `date-games` and `active-users` dashboard readers (they read the
-  wrong shape and always returned empty → `recentGames`/`activeUsersToday` now work). Added
-  `indexes/date-sessions/*` and `indexes/date-followups/*` (entries carry `createdAt`), wired
-  into `session.ts` / `followup.ts`, with a `date-sessions` reindex path.
+## Open items / not done today
 
-### Notes / follow-ups
-- Clarification scope: the **reading screen** offers clarification for **single-card** spreads
-  only (matches "For a single card"); the **follow-up view** offers it for **any** spread
-  (1/3/5), so "same applies to any follow up questions" holds regardless of spread size.
-  `GameContext.canAddClarification` only gates on the 2-card limit; the spread-type gate lives
-  in each view (reading-display renders it for `spreadType === 1`; followup-chat for all).
-- Re-requesting a reading (clarification, or the pre-existing language/tone change path) reuses
-  the same `gameId`, so it does not create extra game docs; per-user `stats.totalReadings` can
-  still over-count re-requests (pre-existing behaviour, left as-is).
-- Verified: `tsc --noEmit` clean (client + worker), `vite build` OK, client tests 46/46.
-  Worker `prompts.test.ts` has 6 **pre-existing** failures (outdated call signatures /
-  `SEEKER'S QUESTION` / `zodiac_sign` expectations) unrelated to this change.
-- UI not exercised in a real browser in this environment.
+- **Android photo-of-results bug** (separate from dashboard work): diagnosed
+  as Chrome's transient-activation expiring while `exportBlob` builds the PNG
+  before `navigator.share` is called. Fix deferred: pre-generate the blob on
+  render so the click handler can call `share` synchronously, and fall
+  through to `<a download>` on any share rejection (not only `AbortError`).
+  Files: `client/src/ui/components/reading-display.ts:451-499`,
+  `client/src/services/Export/ReadingImageExporter.ts:exportBlob`.
+- **Cron-precompute for the dashboard** (Option #2 from the batching
+  discussion) — would let us serve every dashboard request from a single
+  R2 GET regardless of data volume. Not started.
+- **D1 / aggregate-on-write** patterns discussed but deferred until growth
+  warrants.
+
+## Validation
+
+- `tsc --noEmit` clean for both client and worker on the v2.4.4 branch.
+- 46 client unit tests pass.
+- Worker `prompts.test.ts` has 6 pre-existing failures unrelated to today's
+  work (outdated call signatures / `SEEKER'S QUESTION` / `zodiac_sign`).
+- UI verified visually for v2.4.1/v2.4.2/v2.4.3 via screenshots from the
+  user; v2.4.4 not yet verified live (pending deploy + backfill).

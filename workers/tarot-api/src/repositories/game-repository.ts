@@ -1,7 +1,8 @@
 import type { GameDocument, TurnDocument } from '@shared/contracts/entity-contracts.js';
 import type { ReadingRequest } from '@shared/contracts/api-contracts.js';
 import { WORKER_CONFIG } from '../config.js';
-import { r2GetJson, r2PutJson } from '../services/r2-adapter.js';
+import { r2GetJson, r2PutJsonWithMeta } from '../services/r2-adapter.js';
+import { buildGameMetadata, buildTurnMetadata } from '../services/entity-metadata.js';
 
 const GAMES_PREFIX = 'entities/games';
 const TURNS_PREFIX = 'entities/turns';
@@ -57,7 +58,7 @@ export class R2GameRepository {
             ...(params.location ? { location: params.location } : {}),
             ...(params.originalRequest ? { originalRequest: params.originalRequest } : {}),
         };
-        await r2PutJson(this.r2, this.gameKey(params.gameId), doc);
+        await r2PutJsonWithMeta(this.r2, this.gameKey(params.gameId), doc, buildGameMetadata(doc));
         return doc;
     }
 
@@ -75,14 +76,14 @@ export class R2GameRepository {
         if (clarificationCards && clarificationCards.length > 0) {
             doc.clarificationCards = clarificationCards;
         }
-        await r2PutJson(this.r2, this.gameKey(gameId), doc);
+        await r2PutJsonWithMeta(this.r2, this.gameKey(gameId), doc, buildGameMetadata(doc));
     }
 
     async incrementTurnCount(gameId: string): Promise<void> {
         const doc = await this.getGame(gameId);
         if (!doc) throw new Error(`Game ${gameId} not found`);
         doc.turnCount += 1;
-        await r2PutJson(this.r2, this.gameKey(gameId), doc);
+        await r2PutJsonWithMeta(this.r2, this.gameKey(gameId), doc, buildGameMetadata(doc));
     }
 
     async writeTurn(params: {
@@ -120,7 +121,7 @@ export class R2GameRepository {
             success: true,
             errorMessage: null,
         };
-        await r2PutJson(this.r2, this.turnKey(params.gameId, params.turnNumber), doc);
+        await r2PutJsonWithMeta(this.r2, this.turnKey(params.gameId, params.turnNumber), doc, buildTurnMetadata(doc));
         return doc;
     }
 }

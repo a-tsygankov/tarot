@@ -1,14 +1,28 @@
 import type { Env } from '../env.js';
-import type { DailySummary, GameDocument, SessionDocument, TurnDocument, UserDocument } from '@shared/contracts/entity-contracts.js';
-import type { TraitValueMap } from '@shared/contracts/api-contracts.js';
-import { buildLocationKey, listDocuments, loadJson, requireAdmin } from './admin-helpers.js';
+import type { DailySummary } from '@shared/contracts/entity-contracts.js';
+import { buildLocationKey, loadJson, requireAdmin } from './admin-helpers.js';
+import { listWithMetadata, type ListedEntity } from '../services/r2-adapter.js';
+import {
+    parseGameMeta,
+    parseTurnMeta,
+    parseUserMeta,
+    type GameSummary,
+    type TurnSummary,
+    type UserSummary,
+} from '../services/entity-metadata.js';
 import { WORKER_CONFIG } from '../config.js';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Dashboard data response.
- * Aggregated from R2 analytics, user index, and recent game data.
+ *
+ * v2.4.4: sessions removed as a first-class concept (their per-row info is
+ * derived from games where useful). Readings are the new primary entity.
+ *
+ * The aggregation reads every entity's customMetadata via list() (one
+ * subrequest per 1000 objects) instead of GETting bodies, keeping a cold
+ * dashboard well under Cloudflare's 1000-subrequest/invocation cap.
  */
 export interface DashboardResponse {
     period: { from: string; to: string };
@@ -17,11 +31,27 @@ export interface DashboardResponse {
         users: { total: number; scope: number };
         readings: { total: number; scope: number };
         followUps: { total: number; scope: number };
-        sessions: { total: number; scope: number };
     };
     daily: DailySummary[];
     topLanguages: Array<{ language: string; count: number }>;
-    recentGames: Array<{
+    users: Array<{
+        uid: string;
+        name: string | null;
+        alias: string | null;
+        language: string;
+        tone: string;
+        totalReadings: number;
+        totalFollowUps: number;
+        readingsInPeriod: number;
+        questionsInPeriod: number;
+        followUpsInPeriod: number;
+        lastSeenAt: string;
+        lastCity: string | null;
+        lastCountry: string | null;
+        userTraits: Record<string, string[]>;
+        recentGameIds: string[];
+    }>;
+    readings: Array<{
         gameId: string;
         uid: string;
         userName: string | null;
@@ -33,53 +63,15 @@ export interface DashboardResponse {
         language: string;
         tone: string;
         turnCount: number;
-        city: string | null;
-        country: string | null;
-        createdAt: string;
-    }>;
-    users: Array<{
-        uid: string;
-        name: string | null;
-        alias: string | null;
-        gender: string | null;
-        birthdate: string | null;
-        language: string;
-        tone: string;
-        latestDevice: string | null;
-        totalReadings: number;
-        totalFollowUps: number;
-        readingsInPeriod: number;
-        questionsInPeriod: number;
-        followUpsInPeriod: number;
-        lastSeenAt: string;
-        lastCity: string | null;
-        lastCountry: string | null;
-        userTraits: Record<string, string[]>;
-        sessionIds: string[];
-        locationKeys: string[];
-        recentGameIds: string[];
-    }>;
-    sessions: Array<{
-        sessionId: string;
-        uid: string;
-        userName: string | null;
-        userAlias: string | null;
-        createdAt: string;
-        city: string | null;
-        country: string | null;
-        timezone: string | null;
-        device: string | null;
-        appVersion: string;
-        gameCount: number;
-        questionCount: number;
         followUpCount: number;
-        lastGameId: string | null;
+        city: string | null;
+        country: string | null;
+        createdAt: string;
     }>;
     locations: Array<{
         key: string;
         city: string | null;
         country: string | null;
-        sessionCount: number;
         gameCount: number;
         userCount: number;
         lastPlayedAt: string;
@@ -97,37 +89,34 @@ export interface DashboardResponse {
 }
 
 /**
- * GET /api/admin/dashboard?days=1|7|30
- * Returns aggregated analytics for the dashboard.
- * Protected by ANALYTICS_KEY.
+ * GET /api/admin/dashboard?days=1|3|7|30[&force=1]
+ * Protected by ANALYTICS_KEY. Responses cached in R2 for 5 minutes (per worker
+ * version). `force=1` bypasses the cache.
  */
 export async function handleDashboard(request: Request, env: Env): Promise<Response> {
     const unauthorized = requireAdmin(request, env);
-    if (unauthorized) {
-        return unauthorized;
-    }
+    if (unauthorized) return unauthorized;
 
     const url = new URL(request.url);
     const requestedDays = parseInt(url.searchParams.get('days') ?? '7', 10);
     const days = [1, 3, 7, 30].includes(requestedDays) ? requestedDays : 7;
     const force = url.searchParams.get('force') === '1';
 
-    // Cache key is version-scoped so that releases never serve a stale shape
-    // (e.g., v2.4.1 cached empty-scope responses; v2.4.2 must not return them).
+    // Cache key is version-scoped so each release starts fresh (a previous
+    // release's shape is never served by a newer worker).
     const cacheKey = `cache/dashboard/${WORKER_CONFIG.version}/days-${days}.json`;
     if (!force) {
         try {
             const cached = await loadJson<DashboardResponse & { cachedAt?: string }>(env.R2, cacheKey);
             if (cached?.cachedAt) {
                 const age = Date.now() - new Date(cached.cachedAt).getTime();
-                if (age < CACHE_TTL_MS) {
-                    return Response.json(cached);
-                }
+                if (age < CACHE_TTL_MS) return Response.json(cached);
             }
-        } catch { /* fall through to recompute */ }
+        } catch { /* fall through and recompute */ }
     }
 
     try {
+        // ── 1. Window ──────────────────────────────────────────────
         const today = new Date();
         const dates: string[] = [];
         for (let i = 0; i < days; i++) {
@@ -135,135 +124,92 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             d.setDate(d.getDate() - i);
             dates.push(d.toISOString().slice(0, 10));
         }
+        const scopeStart = dates[dates.length - 1];
+        const isWithinScope = (iso: string | null | undefined) =>
+            Boolean(iso && iso.slice(0, 10) >= scopeStart);
 
-        // Daily summaries (already aggregated server-side) — cheap reads.
-        const dailyPromises = dates.map(async (date) =>
-            loadJson<DailySummary>(env.R2, `analytics/daily/${date}.json`),
-        );
-
-        // Active users for today (legacy {uids} shape tolerated).
-        const activeUsersPromise = (async () => {
-            const obj = await env.R2.get(`indexes/active-users/${dates[0]}.json`);
-            if (!obj) return 0;
-            try {
-                const data = await obj.json() as string[] | { uids?: string[] };
-                return Array.isArray(data) ? data.length : (data.uids?.length ?? 0);
-            } catch {
-                return 0;
-            }
-        })();
-
-        // Cold-path full-table scan. Turn docs and user-traits docs are deliberately
-        // skipped here — they push us past Cloudflare's 1000-subrequest/invocation
-        // limit (users + sessions + games + turns + traits ≈ 1000 GETs at current
-        // volume). Per-turn metrics (avgResponseMs, providerBreakdown, per-user
-        // scoped follow-up counts) degrade to 0/empty; user-traits are lazy-loaded
-        // by the per-user detail endpoint. Top-level follow-up totals come from
-        // user.stats.totalFollowUps and daily summaries instead.
-        const [allUsers, allSessions, allGames] = await Promise.all([
-            listDocuments<UserDocument>(env.R2, 'entities/users/'),
-            listDocuments<SessionDocument>(env.R2, 'entities/sessions/'),
-            listDocuments<GameDocument>(env.R2, 'entities/games/'),
-        ]);
-
-        const userNameByUid = new Map<string, string | null>();
-        const userAliasByUid = new Map<string, string | null>();
-        for (const user of allUsers) {
-            userNameByUid.set(user.uid, user.name);
-            userAliasByUid.set(user.uid, user.adminAlias ?? null);
-        }
-
-        const [dailyResults, activeUsersToday] = await Promise.all([
-            Promise.all(dailyPromises),
-            activeUsersPromise,
+        // ── 2. Cheap inputs (no per-object GETs) ───────────────────
+        const [
+            userEntities,
+            gameEntities,
+            turnEntities,
+            dailyResults,
+            activeUsersToday,
+        ] = await Promise.all([
+            listWithMetadata(env.R2, 'entities/users/'),
+            listWithMetadata(env.R2, 'entities/games/'),
+            listWithMetadata(env.R2, 'entities/turns/'),
+            Promise.all(dates.map(d => loadJson<DailySummary>(env.R2, `analytics/daily/${d}.json`))),
+            (async () => {
+                const obj = await env.R2.get(`indexes/active-users/${dates[0]}.json`);
+                if (!obj) return 0;
+                try {
+                    const data = await obj.json() as string[] | { uids?: string[] };
+                    return Array.isArray(data) ? data.length : (data.uids?.length ?? 0);
+                } catch { return 0; }
+            })(),
         ]);
         const daily = dailyResults.filter((d): d is DailySummary => d !== null);
-        const scopeStart = dates[dates.length - 1];
-        const isWithinScope = (iso: string | null | undefined) => Boolean(iso && iso.slice(0, 10) >= scopeStart);
 
-        // Per-turn data is no longer scanned (see comment above). These remain
-        // empty placeholders so the downstream aggregation shape is unchanged.
-        const scopedReadingTurns: TurnDocument[] = [];
-        const scopedFollowUpTurns: TurnDocument[] = [];
+        // ── 3. Parse metadata once into typed summaries ────────────
+        const allUsers: UserSummary[] = userEntities
+            .map((e: ListedEntity) => parseUserMeta(e.meta))
+            .filter((u): u is UserSummary => u !== null);
+        const allGames: GameSummary[] = gameEntities
+            .map((e: ListedEntity) => parseGameMeta(e.meta))
+            .filter((g): g is GameSummary => g !== null);
+        const allTurns: TurnSummary[] = turnEntities
+            .map((e: ListedEntity) => parseTurnMeta(e.meta))
+            .filter((t): t is TurnSummary => t !== null);
 
-        // Total/scope follow-up counts come from user docs and daily summaries
-        // since we no longer scan turn docs.
-        const totalFollowUpsAllTime = allUsers.reduce((sum, u) => sum + (u.stats?.totalFollowUps ?? 0), 0);
-        const scopedFollowUpsFromDaily = daily.reduce((sum, d) => sum + (d.followUps ?? 0), 0);
+        const userByUid = new Map(allUsers.map(u => [u.uid, u]));
 
-        // Recent games — last 20 most recent overall (not scope-limited so the panel
-        // is never empty when a small scope window has no activity).
-        const recentGames: DashboardResponse['recentGames'] = allGames
-            .slice()
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 20)
-            .map(g => ({
-                gameId: g.gameId,
-                uid: g.uid,
-                userName: userNameByUid.get(g.uid) ?? null,
-                userAlias: userAliasByUid.get(g.uid) ?? null,
-                sessionId: g.sessionId,
-                spreadType: g.spreadType,
-                question: g.question,
-                topic: g.topic,
-                language: g.language,
-                tone: g.tone,
-                turnCount: g.turnCount,
-                city: g.location?.city ?? null,
-                country: g.location?.country ?? null,
-                createdAt: g.createdAt,
-            }));
+        // ── 4. Scoped slices ───────────────────────────────────────
+        const scopedGames = allGames.filter(g => isWithinScope(g.createdAt));
+        const scopedUsers = allUsers.filter(u => isWithinScope(u.lastSeenAt));
+        const scopedReadingTurns = allTurns.filter(t => t.turnType === 'reading' && isWithinScope(t.createdAt));
+        const scopedFollowUpTurns = allTurns.filter(t => t.turnType === 'followup' && isWithinScope(t.createdAt));
 
-        // Follow-up turns within the period, aggregated by user and by session.
-        const sessionIdByGameId = new Map<string, string>();
-        for (const game of allGames) {
-            sessionIdByGameId.set(game.gameId, game.sessionId);
-        }
+        // ── 5. Follow-up counts by game/user ───────────────────────
+        const followUpsByGameId = new Map<string, number>();
         const followUpsByUid = new Map<string, number>();
-        const followUpsBySession = new Map<string, number>();
-        for (const turn of scopedFollowUpTurns) {
-            followUpsByUid.set(turn.uid, (followUpsByUid.get(turn.uid) ?? 0) + 1);
-            const sid = sessionIdByGameId.get(turn.gameId);
-            if (sid) {
-                followUpsBySession.set(sid, (followUpsBySession.get(sid) ?? 0) + 1);
-            }
+        for (const t of scopedFollowUpTurns) {
+            followUpsByGameId.set(t.gameId, (followUpsByGameId.get(t.gameId) ?? 0) + 1);
+            followUpsByUid.set(t.uid, (followUpsByUid.get(t.uid) ?? 0) + 1);
         }
+
+        // ── 6. Performance from turn metadata (restored from v2.4.3) ─
         const providerBreakdown: Record<string, number> = {};
         let totalReadingMs = 0;
-        for (const turn of scopedReadingTurns) {
-            if (turn.responseTimeMs > 0) {
-                totalReadingMs += turn.responseTimeMs;
-            }
-            if (turn.aiProvider) {
-                providerBreakdown[turn.aiProvider] = (providerBreakdown[turn.aiProvider] ?? 0) + 1;
-            }
+        for (const t of scopedReadingTurns) {
+            if (t.responseTimeMs > 0) totalReadingMs += t.responseTimeMs;
+            if (t.aiProvider) providerBreakdown[t.aiProvider] = (providerBreakdown[t.aiProvider] ?? 0) + 1;
         }
         const performance = {
-            avgResponseMs: scopedReadingTurns.length > 0 ? Math.round(totalReadingMs / scopedReadingTurns.length) : 0,
+            avgResponseMs: scopedReadingTurns.length > 0
+                ? Math.round(totalReadingMs / scopedReadingTurns.length)
+                : 0,
             totalTurns: scopedReadingTurns.length,
             providerBreakdown,
         };
 
+        // ── 7. Totals (sessions are gone) ──────────────────────────
         const totals = {
             users: {
                 total: allUsers.length,
-                scope: allUsers.filter(user => isWithinScope(user.firstSeenAt)).length,
+                scope: allUsers.filter(u => isWithinScope(u.firstSeenAt)).length,
             },
             readings: {
                 total: allGames.length,
-                scope: allGames.filter(game => isWithinScope(game.createdAt)).length,
+                scope: scopedGames.length,
             },
             followUps: {
-                total: totalFollowUpsAllTime,
-                scope: scopedFollowUpsFromDaily,
-            },
-            sessions: {
-                total: allSessions.length,
-                scope: allSessions.filter(session => isWithinScope(session.createdAt)).length,
+                total: allTurns.filter(t => t.turnType === 'followup').length,
+                scope: scopedFollowUpTurns.length,
             },
         };
 
-        // Aggregate top languages
+        // ── 8. Top languages from daily summaries ──────────────────
         const langMap: Record<string, number> = {};
         for (const d of daily) {
             for (const l of (d.topLanguages ?? [])) {
@@ -274,157 +220,98 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             .map(([language, count]) => ({ language, count }))
             .sort((a, b) => b.count - a.count);
 
-        // Filter entities to the selected date scope.
-        const cutoff = dates[dates.length - 1];
-        const scopedUsers = allUsers.filter(u => u.lastSeenAt >= cutoff);
-        const scopedSessions = allSessions.filter(s => s.createdAt >= cutoff);
-        const scopedGames = allGames.filter(g => g.createdAt >= cutoff);
-
-        const sessionsByUid = new Map<string, SessionDocument[]>();
-        for (const session of scopedSessions) {
-            const current = sessionsByUid.get(session.uid) ?? [];
-            current.push(session);
-            sessionsByUid.set(session.uid, current);
+        // ── 9. Users table — readings/questions/follow-ups in period ─
+        const gamesByUid = new Map<string, GameSummary[]>();
+        for (const g of scopedGames) {
+            const arr = gamesByUid.get(g.uid) ?? [];
+            arr.push(g);
+            gamesByUid.set(g.uid, arr);
         }
-
-        const gamesByUid = new Map<string, GameDocument[]>();
-        for (const game of scopedGames) {
-            const current = gamesByUid.get(game.uid) ?? [];
-            current.push(game);
-            gamesByUid.set(game.uid, current);
-        }
-
-        // Traits are lazy-loaded by the per-user detail endpoint to keep the dashboard
-        // request under Cloudflare's subrequest limit.
-        const traitsByUserId = new Map<string, { traits: TraitValueMap }>();
-
-        const users = scopedUsers
-            .map(user => {
-                const userSessions = (sessionsByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-                const userGames = (gamesByUid.get(user.uid) ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-                const locationKeys = Array.from(new Set(
-                    userGames
-                        .filter(game => game.location?.city || game.location?.country)
-                        .map(game => buildLocationKey(game.location?.city ?? null, game.location?.country ?? null)),
-                ));
-                return {
-                    uid: user.uid,
-                    name: user.name,
-                    alias: user.adminAlias ?? null,
-                    gender: user.gender,
-                    birthdate: user.birthdate,
-                    language: user.preferences.language,
-                    tone: user.preferences.tone,
-                    latestDevice: userSessions[0]?.device ?? null,
-                    totalReadings: user.stats.totalReadings,
-                    totalFollowUps: user.stats.totalFollowUps,
-                    readingsInPeriod: userGames.length,
-                    questionsInPeriod: userGames.filter(game => !!game.question).length,
-                    followUpsInPeriod: followUpsByUid.get(user.uid) ?? 0,
-                    lastSeenAt: user.lastSeenAt,
-                    lastCity: user.locations.lastCity,
-                    lastCountry: user.locations.lastCountry,
-                    userTraits: traitsByUserId.get(user.uid)?.traits ?? {},
-                    sessionIds: userSessions.map(session => session.sessionId),
-                    locationKeys,
-                    recentGameIds: userGames.slice(0, 5).map(game => game.gameId),
-                };
-            })
-            // Hide users with no readings in the selected period.
-            .filter(user => user.readingsInPeriod > 0)
-            .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-
-        const sessions = scopedSessions
-            .map(session => {
-                const sessionGames = scopedGames
-                    .filter(game => game.sessionId === session.sessionId)
+        const usersTable = scopedUsers
+            .map(u => {
+                const userGames = (gamesByUid.get(u.uid) ?? [])
                     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
                 return {
-                    sessionId: session.sessionId,
-                    uid: session.uid,
-                    userName: userNameByUid.get(session.uid) ?? null,
-                    userAlias: userAliasByUid.get(session.uid) ?? null,
-                    createdAt: session.createdAt,
-                    city: session.city,
-                    country: session.country,
-                    timezone: session.timezone,
-                    device: session.device,
-                    appVersion: session.appVersion,
-                    gameCount: sessionGames.length,
-                    questionCount: sessionGames.filter(game => !!game.question).length,
-                    followUpCount: followUpsBySession.get(session.sessionId) ?? 0,
-                    lastGameId: sessionGames[0]?.gameId ?? null,
+                    uid: u.uid,
+                    name: u.name,
+                    alias: u.adminAlias,
+                    language: u.language,
+                    tone: u.tone,
+                    totalReadings: u.totalReadings,
+                    totalFollowUps: u.totalFollowUps,
+                    readingsInPeriod: userGames.length,
+                    questionsInPeriod: userGames.filter(g => !!g.question).length,
+                    followUpsInPeriod: followUpsByUid.get(u.uid) ?? 0,
+                    lastSeenAt: u.lastSeenAt,
+                    lastCity: u.lastCity,
+                    lastCountry: u.lastCountry,
+                    userTraits: {}, // lazy-loaded by /api/admin/user/{uid}
+                    recentGameIds: userGames.slice(0, 5).map(g => g.gameId),
                 };
             })
-            // Hide sessions with no readings in the selected period.
-            .filter(session => session.gameCount > 0)
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+            .filter(u => u.readingsInPeriod > 0)
+            .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
 
+        // ── 10. Readings table — first-class, replaces "sessions" ──
+        const readingsTable = scopedGames
+            .slice()
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .map(g => {
+                const u = userByUid.get(g.uid);
+                return {
+                    gameId: g.gameId,
+                    uid: g.uid,
+                    userName: u?.name ?? null,
+                    userAlias: u?.adminAlias ?? null,
+                    sessionId: g.sessionId,
+                    spreadType: g.spreadType,
+                    question: g.question,
+                    topic: g.topic,
+                    language: g.language,
+                    tone: g.tone,
+                    turnCount: g.turnCount,
+                    followUpCount: followUpsByGameId.get(g.gameId) ?? 0,
+                    city: g.city,
+                    country: g.country,
+                    createdAt: g.createdAt,
+                };
+            });
+
+        // ── 11. Locations from scoped games only ───────────────────
         const locationMap = new Map<string, DashboardResponse['locations'][number]>();
-        for (const game of scopedGames) {
-            const key = buildLocationKey(game.location?.city ?? null, game.location?.country ?? null);
-            if (!game.location?.city && !game.location?.country) {
-                continue;
-            }
+        for (const g of scopedGames) {
+            if (!g.city && !g.country) continue;
+            const key = buildLocationKey(g.city, g.country);
             const current = locationMap.get(key) ?? {
-                key,
-                city: game.location?.city ?? null,
-                country: game.location?.country ?? null,
-                sessionCount: 0,
-                gameCount: 0,
-                userCount: 0,
-                lastPlayedAt: game.createdAt,
-                sampleGameIds: [],
-                sampleUserIds: [],
+                key, city: g.city, country: g.country,
+                gameCount: 0, userCount: 0,
+                lastPlayedAt: g.createdAt,
+                sampleGameIds: [], sampleUserIds: [],
             };
             current.gameCount += 1;
-            current.lastPlayedAt = current.lastPlayedAt > game.createdAt ? current.lastPlayedAt : game.createdAt;
-            if (current.sampleGameIds.length < 5 && !current.sampleGameIds.includes(game.gameId)) {
-                current.sampleGameIds.push(game.gameId);
+            if (g.createdAt > current.lastPlayedAt) current.lastPlayedAt = g.createdAt;
+            if (current.sampleGameIds.length < 5 && !current.sampleGameIds.includes(g.gameId)) {
+                current.sampleGameIds.push(g.gameId);
             }
-            if (!current.sampleUserIds.includes(game.uid)) {
-                current.sampleUserIds.push(game.uid);
+            if (!current.sampleUserIds.includes(g.uid)) {
+                current.sampleUserIds.push(g.uid);
                 current.userCount = current.sampleUserIds.length;
             }
             locationMap.set(key, current);
         }
-        for (const session of scopedSessions) {
-            if (!session.city && !session.country) {
-                continue;
-            }
-            const key = buildLocationKey(session.city, session.country);
-            const current = locationMap.get(key);
-            if (!current) {
-                continue;
-            }
-            current.sessionCount += 1;
-            if (session.createdAt > current.lastPlayedAt) {
-                current.lastPlayedAt = session.createdAt;
-            }
-            if (!current.sampleUserIds.includes(session.uid)) {
-                current.sampleUserIds.push(session.uid);
-                current.userCount = current.sampleUserIds.length;
-            }
-        }
         const locations = Array.from(locationMap.values())
-            .map(location => ({
-                ...location,
-                sampleUserIds: location.sampleUserIds.slice(0, 5),
-            }))
+            .map(l => ({ ...l, sampleUserIds: l.sampleUserIds.slice(0, 5) }))
             .sort((a, b) => b.lastPlayedAt.localeCompare(a.lastPlayedAt));
 
-        // Import config for version info
-        const { WORKER_CONFIG } = await import('../config.js');
-
+        // ── 12. Build response, cache, return ──────────────────────
         const response: DashboardResponse = {
             period: { from: dates[dates.length - 1], to: dates[0] },
             scopeDays: days,
             totals,
             daily: daily.sort((a, b) => a.date.localeCompare(b.date)),
             topLanguages,
-            recentGames,
-            users,
-            sessions,
+            users: usersTable,
+            readings: readingsTable,
             locations,
             performance,
             activeUsersToday,
@@ -432,11 +319,12 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
             workerVersion: WORKER_CONFIG.version,
         };
 
-        // Persist the cache. Best-effort — never block the response on a cache write failure.
         try {
-            await env.R2.put(cacheKey, JSON.stringify({ ...response, cachedAt: new Date().toISOString() }), {
-                httpMetadata: { contentType: 'application/json' },
-            });
+            await env.R2.put(
+                cacheKey,
+                JSON.stringify({ ...response, cachedAt: new Date().toISOString() }),
+                { httpMetadata: { contentType: 'application/json' } },
+            );
         } catch (cacheErr) {
             console.warn('Dashboard cache write failed:', cacheErr instanceof Error ? cacheErr.message : cacheErr);
         }
@@ -445,9 +333,6 @@ export async function handleDashboard(request: Request, env: Env): Promise<Respo
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error('Dashboard error:', message);
-        return Response.json(
-            { error: 'Dashboard failed', message },
-            { status: 500 },
-        );
+        return Response.json({ error: 'Dashboard failed', message }, { status: 500 });
     }
 }
