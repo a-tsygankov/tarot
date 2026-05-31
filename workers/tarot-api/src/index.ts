@@ -29,6 +29,7 @@ import { R2AnalyticsRepository } from './repositories/analytics-repository.js';
 import { IndexWriter } from './services/index-writer.js';
 import { SchemaUpgradeService } from './services/schema-upgrade-service.js';
 import { checkRateLimit, rateLimitResponse } from './middleware/rate-limiter.js';
+import { recordRequestTiming } from './services/request-timing.js';
 import { WORKER_CONFIG } from './config.js';
 
 /**
@@ -36,7 +37,8 @@ import { WORKER_CONFIG } from './config.js';
  * Routes requests to handlers with CORS support and rate limiting.
  */
 export default {
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        const startedAt = Date.now();
         // Handle CORS preflight
         if (request.method === 'OPTIONS') {
             return corsResponse(env, new Response(null, { status: 204 }), request);
@@ -162,7 +164,16 @@ export default {
             );
         }
 
-        return corsResponse(env, response, request);
+        const finalResponse = corsResponse(env, response, request);
+        // Record timing async — never blocks the response, swallows failures.
+        ctx.waitUntil(recordRequestTiming(env.R2, {
+            path,
+            method: request.method,
+            status: finalResponse.status,
+            durationMs: Date.now() - startedAt,
+            ts: new Date(startedAt).toISOString(),
+        }));
+        return finalResponse;
     },
 } satisfies ExportedHandler<Env>;
 
