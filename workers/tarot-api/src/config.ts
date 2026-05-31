@@ -3,7 +3,7 @@
  */
 
 export const WORKER_CONFIG = {
-    version: '2.4.0',
+    version: '2.4.1',
     apiVersion: '2.0',
     supportedApiVersions: ['2.0'],
     minClientVersion: '2.0.0',
@@ -37,7 +37,7 @@ export const WORKER_CONFIG = {
         eventsPerMinute: 100,
     },
 
-    schemaVersion: '2026.04.08-01',
+    schemaVersion: '2026.05.31-01',
 } as const;
 
 /**
