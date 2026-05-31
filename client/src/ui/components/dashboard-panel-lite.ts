@@ -15,6 +15,7 @@ interface NavEntry {
 }
 
 const REFRESH_COOLDOWN_MS = 60_000;
+const AUTO_REFRESH_MS = 5 * 60_000;
 
 @customElement('dashboard-panel')
 export class DashboardPanelLite extends LitElement {
@@ -76,7 +77,9 @@ export class DashboardPanelLite extends LitElement {
 
     private adminKey = '';
     private cooldownTimer: ReturnType<typeof setInterval> | null = null;
+    private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
     private static readonly STORAGE_KEY = 'tarot_admin_key';
+    private static readonly DAYS_KEY = 'tarot_dashboard_days';
 
     private get detail(): JsonMap | null { return this.navStack.length ? this.navStack[this.navStack.length - 1].detail : null; }
     private get detailKind(): DetailKind | 'overview' { return this.navStack.length ? this.navStack[this.navStack.length - 1].kind : 'overview'; }
@@ -86,6 +89,8 @@ export class DashboardPanelLite extends LitElement {
 
     override connectedCallback(): void {
         super.connectedCallback();
+        const storedDays = parseInt(localStorage.getItem(DashboardPanelLite.DAYS_KEY) ?? '', 10);
+        if ([1, 3, 7, 30].includes(storedDays)) this.days = storedDays;
         const stored = localStorage.getItem(DashboardPanelLite.STORAGE_KEY);
         if (stored) {
             this.adminKey = stored;
@@ -93,11 +98,20 @@ export class DashboardPanelLite extends LitElement {
         }
         // 1s tick keeps the refresh-cooldown countdown live without re-rendering otherwise.
         this.cooldownTimer = setInterval(() => { this.now = Date.now(); }, 1000);
+        this.scheduleAutoRefresh();
     }
 
     override disconnectedCallback(): void {
         super.disconnectedCallback();
         if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+        if (this.autoRefreshTimer) clearInterval(this.autoRefreshTimer);
+    }
+
+    private scheduleAutoRefresh(): void {
+        if (this.autoRefreshTimer) clearInterval(this.autoRefreshTimer);
+        this.autoRefreshTimer = setInterval(() => {
+            if (this.authenticated && !this.loading) void this.fetchDashboard();
+        }, AUTO_REFRESH_MS);
     }
 
     override render() {
@@ -334,8 +348,17 @@ export class DashboardPanelLite extends LitElement {
     private goHome = () => { this.navStack = []; this.error = ''; };
     private goBack = () => { if (this.navStack.length === 0) return; this.navStack = this.navStack.slice(0, -1); this.error = ''; };
     private popTo = (depth: number) => { this.navStack = this.navStack.slice(0, depth); this.error = ''; };
-    private changeDays(days: number) { this.days = days; void this.fetchDashboard(); }
-    private refreshNow = () => { if (this.refreshDisabled) return; void this.fetchDashboard({ force: true }); };
+    private changeDays(days: number) {
+        this.days = days;
+        try { localStorage.setItem(DashboardPanelLite.DAYS_KEY, String(days)); } catch { /* storage may be unavailable */ }
+        this.scheduleAutoRefresh();
+        void this.fetchDashboard();
+    }
+    private refreshNow = () => {
+        if (this.refreshDisabled) return;
+        this.scheduleAutoRefresh();
+        void this.fetchDashboard({ force: true });
+    };
 
     private async validateAndLoad(key: string): Promise<void> {
         this.validating = true; this.error = '';
