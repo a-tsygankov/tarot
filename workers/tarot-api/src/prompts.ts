@@ -89,6 +89,7 @@ Rules:
         Mystical: '',
         Ironic: 'TONE: Be witty, ironic, use dark humor freely. You can be sarcastic and playful but never mean. Think of a fortune teller who has seen it all and has a dry wit about human nature.',
         Normal: 'TONE: Use a clear, grounded, everyday voice. Interpret the cards straightforwardly and conversationally, without heavy mystical language or poetic embellishment. Still respect the Tarot tradition, but speak plainly.',
+        Street: 'TONE: Speak like a street-smart hustler reading cards on the corner — raw, direct, unfiltered slang with hip-hop swagger. No sugarcoating: if the cards say trouble, say it straight. Keep it real, keep it punchy, drop the flowery mystic act. You can be rough around the edges but never insulting to the seeker, and no profanity stronger than mild. When responding in other languages, use that language\'s equivalent street slang and register.',
     } as Record<string, string>,
 
     languages: {
