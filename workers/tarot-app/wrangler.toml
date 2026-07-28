@@ -1,0 +1,15 @@
+# Static hosting for the Tarot client (moved from GitHub Pages).
+#
+# The `site/` directory is staged by CI (.github/workflows/deploy.yml):
+#   site/index.html   <- site-root/index.html (redirects / -> /tarot/)
+#   site/tarot/**     <- client/dist (vite build, base '/tarot/')
+#
+# The app stays under /tarot/ so that URLs are identical to the old
+# GitHub Pages origin — the redirect page there maps paths 1:1 and
+# existing bookmarks / iPhone home-screen shortcuts keep working.
+
+name = "tarot-app"
+compatibility_date = "2025-04-01"
+
+[assets]
+directory = "./site"
