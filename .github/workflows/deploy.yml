@@ -7,6 +7,7 @@ on:
       - 'client/**'
       - 'shared/**'
       - 'workers/**'
+      - 'redirect-page/**'
   workflow_dispatch:
 
 # ── Client (GitHub Pages) ──────────────────────────────────────────
@@ -21,12 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Deploy client to GitHub Pages ──
+  # ── Deploy client to Cloudflare Workers (static assets) ──
   deploy-client:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,13 +52,46 @@ jobs:
         working-directory: client
         run: npm run build
 
+      # The app keeps its /tarot/ prefix on the new origin so old-origin
+      # URLs map 1:1 (bookmarks, iPhone home-screen shortcuts).
+      - name: Stage site directory
+        working-directory: workers/tarot-app
+        run: |
+          rm -rf site
+          mkdir -p site/tarot
+          cp site-root/index.html site/index.html
+          cp -r ../../client/dist/. site/tarot/
+
+      - name: Install worker dependencies
+        working-directory: workers/tarot-app
+        run: npm ci
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: workers/tarot-app
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # ── Deploy redirect page to GitHub Pages (old origin) ──
+  # Keeps existing bookmarks / links / home-screen shortcuts working:
+  # every path on the old origin redirects 1:1 to the new origin.
+  deploy-redirect:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: client/dist
+          path: redirect-page
 
       - name: Deploy to GitHub Pages
         id: deployment

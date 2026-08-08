@@ -1,0 +1,12 @@
+{
+  "name": "tarot-app",
+  "private": true,
+  "version": "2.4.6",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
