@@ -11,8 +11,7 @@ const ASSET_INDEX = [
     { id: 'karina', label: 'Karina', description: 'Hand-drawn deck' },
 ];
 
-// Pool order inside the registry: [...assetDecks, ...builtins]
-// => ['mermaids', 'karina', 'classic', 'cats']
+// Pool order inside the registry (asset decks only): ['mermaids', 'karina']
 
 function stubFetch(): void {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -50,8 +49,7 @@ describe('card-art-registry — Random deck', () => {
         await reg.initDeckStyle();
         const styles = reg.getAvailableDeckStyles();
         expect(styles[0].id).toBe('random');
-        expect(styles.map(s => s.id)).toEqual(
-            ['random', 'mermaids', 'karina', 'classic', 'cats']);
+        expect(styles.map(s => s.id)).toEqual(['random', 'mermaids', 'karina']);
     });
 
     it('defaults new users (no stored deck) to Random', async () => {
@@ -67,7 +65,7 @@ describe('card-art-registry — Random deck', () => {
         await reg.initDeckStyle();
         const resolved = reg.getResolvedDeckStyle();
         expect(resolved).not.toBe('random');
-        expect(['mermaids', 'karina', 'classic', 'cats']).toContain(resolved);
+        expect(['mermaids', 'karina']).toContain(resolved);
     });
 
     it('switches existing users to Random exactly once', async () => {
@@ -111,7 +109,7 @@ describe('card-art-registry — Random deck', () => {
         random.mockReturnValue(0);            // -> pool[0] = mermaids
         await reg.setDeckStyle('random');
         expect(reg.getResolvedDeckStyle()).toBe('mermaids');
-        random.mockReturnValue(0.3);          // floor(0.3 * 4) = 1 -> karina
+        random.mockReturnValue(0.6);          // floor(0.6 * 2) = 1 -> karina
         await reg.setDeckStyle('random');
         expect(reg.getResolvedDeckStyle()).toBe('karina');
     });
@@ -123,7 +121,7 @@ describe('card-art-registry — Random deck', () => {
         random.mockReturnValue(0);
         await reg.rerollRandomDeck();
         expect(reg.getResolvedDeckStyle()).toBe('mermaids');
-        random.mockReturnValue(0.3);
+        random.mockReturnValue(0.6);
         await reg.rerollRandomDeck();
         expect(reg.getResolvedDeckStyle()).toBe('karina');
     });
@@ -148,11 +146,51 @@ describe('card-art-registry — Random deck', () => {
         expect(reg.getCardArt('The Fool', 100, 180)).toBe('<svg>fool</svg>');
     });
 
-    it('falls back to classic when no decks can be discovered', async () => {
+    it('switches a stored Classic selection to Random (deck retired)', async () => {
+        localStorage.setItem('tarot-deck-style', 'classic');
+        localStorage.setItem('tarot-deck-migration-v2', '1');
+        const reg = await importRegistry();
+        await reg.initDeckStyle();
+        expect(reg.getCurrentDeckStyle()).toBe('random');
+        expect(localStorage.getItem('tarot-deck-style')).toBe('random');
+        expect(['mermaids', 'karina']).toContain(reg.getResolvedDeckStyle());
+    });
+
+    it('switches a stored Cat Tarot selection to Random (deck retired)', async () => {
+        localStorage.setItem('tarot-deck-style', 'cats');
+        localStorage.setItem('tarot-deck-migration-v2', '1');
+        const reg = await importRegistry();
+        await reg.initDeckStyle();
+        expect(reg.getCurrentDeckStyle()).toBe('random');
+        expect(localStorage.getItem('tarot-deck-style')).toBe('random');
+    });
+
+    it('never rolls the retired built-ins from Random', async () => {
+        const reg = await importRegistry();
+        await reg.initDeckStyle();
+        for (const value of [0, 0.25, 0.5, 0.75, 0.999]) {
+            vi.spyOn(Math, 'random').mockReturnValue(value);
+            await reg.rerollRandomDeck();
+            expect(['mermaids', 'karina']).toContain(reg.getResolvedDeckStyle());
+        }
+    });
+
+    it('falls back to the internal classic renderer when discovery fails', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response('fail', { status: 500 })));
         const reg = await importRegistry();
         await reg.initDeckStyle();            // new user -> random
-        // Pool is only the builtins now; resolution must still avoid 'random'.
-        expect(['classic', 'cats']).toContain(reg.getResolvedDeckStyle());
+        // Empty pool: render fallback is the internal classic module.
+        expect(reg.getResolvedDeckStyle()).toBe('classic');
+        expect(reg.getCurrentDeckStyle()).toBe('random');
+    });
+
+    it('does not clobber a valid stored deck when discovery fails offline', async () => {
+        localStorage.setItem('tarot-deck-style', 'karina');
+        localStorage.setItem('tarot-deck-migration-v2', '1');
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('fail', { status: 500 })));
+        const reg = await importRegistry();
+        await reg.initDeckStyle();
+        // In-memory fallback to Random is fine, but the stored choice survives.
+        expect(localStorage.getItem('tarot-deck-style')).toBe('karina');
     });
 });
