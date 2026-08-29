@@ -16,6 +16,7 @@ import './tts-debug-panel.js';
 import './star-background.js';
 import './dashboard-panel-lite.js';
 import type { DebugConsole } from './debug-console.js';
+import { rerollRandomDeck } from './card-art-registry.js';
 
 export type AppScreen = 'home' | 'spread' | 'reading' | 'chat' | 'voice' | 'dashboard' | 'tts-debug';
 
@@ -734,9 +735,11 @@ export class TarotApp extends LitElement {
         `;
     }
 
-    private _selectSpread(count: 1 | 3 | 5): void {
+    private async _selectSpread(count: 1 | 3 | 5): Promise<void> {
         if (!this._services) return;
         this._services.gameContext.reset(count);
+        // Each reading gets its own deck when the Random deck is selected.
+        await rerollRandomDeck();
         this.navigate('spread');
     }
 
