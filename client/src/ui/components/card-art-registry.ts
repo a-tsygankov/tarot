@@ -230,6 +230,13 @@ export async function setDeckStyle(styleId: string): Promise<void> {
     }
 }
 
+/** Re-roll the Random deck for a new reading. No-op unless the user's
+ *  selection is Random — an explicitly chosen deck is never changed. */
+export async function rerollRandomDeck(): Promise<void> {
+    if (_currentStyleId !== RANDOM_DECK_ID) return;
+    _resolvedStyleId = await resolveRandomDeck();
+}
+
 /** Get card back SVG for the deck in use */
 export function cardBackSvg(w: number, h: number): string {
     return getProviderSync(_resolvedStyleId).cardBackSvg(w, h);
