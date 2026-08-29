@@ -5,7 +5,7 @@
 
 import type { AppServices } from './composition-root.js';
 import type { VersionResponse } from '@shared/contracts/api-contracts.js';
-import { getCurrentDeckStyle } from '../ui/components/card-art-registry.js';
+import { getCurrentDeckStyle, getResolvedDeckStyle } from '../ui/components/card-art-registry.js';
 
 interface HealthCheck {
     name: string;
@@ -81,7 +81,7 @@ export async function runDiagnostics(services: AppServices, bootStartMs: number)
     // ── Preferences ──
     console.group('Preferences');
     console.log(`Theme: ${localStorage.getItem('tarot-theme') ?? 'dusk'}`);
-    console.log(`Deck: ${getCurrentDeckStyle()}`);
+    console.log(`Deck: ${getCurrentDeckStyle()}${getCurrentDeckStyle() !== getResolvedDeckStyle() ? ` (→ ${getResolvedDeckStyle()})` : ""}`);
     console.log(`Font: ${localStorage.getItem('tarot-font') ?? 'Palatino'}${(localStorage.getItem('tarot-italic') ?? 'true') === 'true' ? ' (italic)' : ''}`);
     console.log(`TTS speed: ${localStorage.getItem('tarot-tts-speed') ?? '1.0'}×`);
     console.log(`TTS engine: ${userContext.ttsProvider}`);
