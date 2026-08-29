@@ -2,13 +2,16 @@
  * Card art registry — manages switchable card art sets (deck styles).
  * Each deck provides: cardBackSvg(w,h) and getCardArt(cardName, w, h).
  *
- * Supports two kinds of decks:
- *   1. Built-in (code-generated SVGs) — classic, cats
- *   2. Asset decks — single deck.json with all SVGs inline, auto-discovered
+ * Selectable decks are asset decks only: a single deck.json with all SVGs
+ * inline, auto-discovered via decks/index.json. Asset decks are lazy-loaded:
+ * only index.json (lightweight) is fetched at startup; the full deck.json
+ * (~MB) is fetched and cached when a deck is selected or rolled.
  *
- * Asset decks are lazy-loaded: only index.json (lightweight) is fetched at
- * startup. The full deck.json (~MB) is fetched and cached when the user
- * selects a deck.
+ * The old built-in decks (classic, cats) were retired in v2.4.8 — they are
+ * not listed, never picked by Random, and a stored selection of either is
+ * switched to Random on load. The classic module survives only as the
+ * internal render fallback while an asset deck is loading or discovery
+ * failed (offline first paint).
  */
 
 import * as classicDeck from './card-art.js';
@@ -32,13 +35,6 @@ interface AssetDeckManifest {
     cards: Record<string, string>;
 }
 
-// ── Built-in decks (always available) ──
-
-const BUILTIN_DECKS: DeckStyleInfo[] = [
-    { id: 'classic', label: 'Classic', description: 'Traditional tarot imagery' },
-    { id: 'cats', label: 'Cat Tarot', description: 'Feline-themed cards' },
-];
-
 const STORAGE_KEY = 'tarot-deck-style';
 const MIGRATION_KEY = 'tarot-deck-migration-v1';
 /** v2: one-time switch of every user to the Random deck (new default). */
@@ -57,13 +53,13 @@ const RANDOM_DECK: DeckStyleInfo = {
     description: 'A different deck every visit',
 };
 
-let _currentStyleId = 'classic';
+let _currentStyleId = RANDOM_DECK_ID;
 /**
  * The deck actually rendered. Equal to _currentStyleId except when the
  * selection is 'random', in which case this holds the randomly chosen deck.
+ * 'classic' here means the internal fallback renderer (not selectable).
  */
 let _resolvedStyleId = 'classic';
-let _catDeckModule: CardArtProvider | null = null;
 /** Lightweight index entries (id + label + description only) */
 let _assetDeckIndex: DeckStyleInfo[] = [];
 /** Fully loaded asset deck providers (cached after first load) */
@@ -81,20 +77,6 @@ class AssetDeckProvider implements CardArtProvider {
     getCardArt(cardName: string, _w: number, _h: number): string | null {
         return this._manifest.cards[cardName] ?? null;
     }
-}
-
-// ── Lazy-load the cat deck module ──
-
-async function loadCatDeck(): Promise<CardArtProvider | null> {
-    if (!_catDeckModule) {
-        try {
-            _catDeckModule = await import('./card-art-cats.js') as CardArtProvider;
-        } catch {
-            console.warn('Cat deck not available, falling back to classic');
-            return null;
-        }
-    }
-    return _catDeckModule;
 }
 
 // ── Lazy-load an asset deck's full manifest ──
@@ -133,17 +115,19 @@ async function discoverAssetDecks(): Promise<DeckStyleInfo[]> {
 
 // ── Public API ──
 
-/** Get all available deck styles (Random first, asset decks, built-in last) */
+/** Get all available deck styles (Random first, then asset decks) */
 export function getAvailableDeckStyles(): DeckStyleInfo[] {
-    return [RANDOM_DECK, ..._assetDeckIndex, ...BUILTIN_DECKS];
+    return [RANDOM_DECK, ..._assetDeckIndex];
 }
 
-/** The pool Random draws from: every real deck, never Random itself. */
+/** The pool Random draws from: every asset deck, never Random itself. */
 function realDeckPool(): DeckStyleInfo[] {
-    return [..._assetDeckIndex, ...BUILTIN_DECKS];
+    return [..._assetDeckIndex];
 }
 
-/** Pick a random real deck and load it. Returns the chosen deck id. */
+/** Pick a random real deck and load it. Returns the chosen deck id.
+ *  If discovery found nothing (offline), falls back to the internal
+ *  classic renderer so cards still paint. */
 async function resolveRandomDeck(): Promise<string> {
     const pool = realDeckPool();
     if (pool.length === 0) return 'classic';
@@ -152,18 +136,15 @@ async function resolveRandomDeck(): Promise<string> {
     return chosen;
 }
 
-/** Ensure a real deck's provider is loaded (no-op for classic). */
+/** Ensure an asset deck's provider is loaded. */
 async function loadDeckById(deckId: string): Promise<void> {
-    if (deckId === 'cats') {
-        await loadCatDeck();
-    } else if (_assetDeckIndex.some(d => d.id === deckId)) {
+    if (_assetDeckIndex.some(d => d.id === deckId)) {
         await loadAssetDeck(deckId);
     }
 }
 
 /** Get the provider for a given style (sync — returns cached or fallback) */
 function getProviderSync(styleId: string): CardArtProvider {
-    if (styleId === 'cats' && _catDeckModule) return _catDeckModule;
     const assetProvider = _assetProviders.get(styleId);
     if (assetProvider) return assetProvider;
     return classicDeck;
@@ -191,10 +172,16 @@ export async function initDeckStyle(): Promise<void> {
     localStorage.setItem(MIGRATION_KEY, '1');
     localStorage.setItem(MIGRATION_V2_KEY, '1');
 
-    // Validate saved style still exists
+    // A stored selection that no longer exists — the retired built-ins
+    // ('classic', 'cats') or any stale id — switches to Random. Persist the
+    // switch only when the deck list actually loaded: an offline start makes
+    // every asset id look unknown and must not clobber a valid stored choice.
     const allStyles = getAvailableDeckStyles();
     if (!allStyles.some(s => s.id === _currentStyleId)) {
-        _currentStyleId = 'classic';
+        _currentStyleId = RANDOM_DECK_ID;
+        if (_assetDeckIndex.length > 0) {
+            localStorage.setItem(STORAGE_KEY, _currentStyleId);
+        }
     }
 
     // Load the active deck (resolving Random to a real deck for this visit)

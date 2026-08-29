@@ -260,7 +260,7 @@ export class SettingsPanel extends LitElement {
     @state() private _ttsProvider: 'browser' | 'piper' = 'browser';
     @state() private _speed = 1.0;
     @state() private _font = 'Palatino';
-    @state() private _deckStyle = 'classic';
+    @state() private _deckStyle = 'random';
     @state() private _deckStyles: DeckStyleInfo[] = [];
     @state() private _italic = true;
     @state() private _fontSize = 'medium';
