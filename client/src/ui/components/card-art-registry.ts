@@ -41,21 +41,28 @@ const BUILTIN_DECKS: DeckStyleInfo[] = [
 
 const STORAGE_KEY = 'tarot-deck-style';
 const MIGRATION_KEY = 'tarot-deck-migration-v1';
+/** v2: one-time switch of every user to the Random deck (new default). */
+const MIGRATION_V2_KEY = 'tarot-deck-migration-v2';
 const FETCH_TIMEOUT_MS = 30_000;
 const BASE_PATH = import.meta.env.BASE_URL ?? '/';
 
 /**
- * One-time silent migration: old deck ID → new deck ID.
- * Applied ONCE per browser (tracked via MIGRATION_KEY flag).
- * After migration runs, users can freely select any deck — including the
- * original built-ins — and their choice persists without being overridden.
+ * Pseudo-deck: picks one of the real decks at random on every app load
+ * (and again whenever the user re-selects it in Settings).
  */
-const DECK_RENAMES: Record<string, string> = {
-    'classic': 'community',   // Classic → Rider-Waite
-    'cats':    'dark-cats',   // Cat Tarot → Dark Cats
+export const RANDOM_DECK_ID = 'random';
+const RANDOM_DECK: DeckStyleInfo = {
+    id: RANDOM_DECK_ID,
+    label: 'Random',
+    description: 'A different deck every visit',
 };
 
 let _currentStyleId = 'classic';
+/**
+ * The deck actually rendered. Equal to _currentStyleId except when the
+ * selection is 'random', in which case this holds the randomly chosen deck.
+ */
+let _resolvedStyleId = 'classic';
 let _catDeckModule: CardArtProvider | null = null;
 /** Lightweight index entries (id + label + description only) */
 let _assetDeckIndex: DeckStyleInfo[] = [];
@@ -126,9 +133,32 @@ async function discoverAssetDecks(): Promise<DeckStyleInfo[]> {
 
 // ── Public API ──
 
-/** Get all available deck styles (asset decks first, built-in at the end) */
+/** Get all available deck styles (Random first, asset decks, built-in last) */
 export function getAvailableDeckStyles(): DeckStyleInfo[] {
+    return [RANDOM_DECK, ..._assetDeckIndex, ...BUILTIN_DECKS];
+}
+
+/** The pool Random draws from: every real deck, never Random itself. */
+function realDeckPool(): DeckStyleInfo[] {
     return [..._assetDeckIndex, ...BUILTIN_DECKS];
+}
+
+/** Pick a random real deck and load it. Returns the chosen deck id. */
+async function resolveRandomDeck(): Promise<string> {
+    const pool = realDeckPool();
+    if (pool.length === 0) return 'classic';
+    const chosen = pool[Math.floor(Math.random() * pool.length)].id;
+    await loadDeckById(chosen);
+    return chosen;
+}
+
+/** Ensure a real deck's provider is loaded (no-op for classic). */
+async function loadDeckById(deckId: string): Promise<void> {
+    if (deckId === 'cats') {
+        await loadCatDeck();
+    } else if (_assetDeckIndex.some(d => d.id === deckId)) {
+        await loadAssetDeck(deckId);
+    }
 }
 
 /** Get the provider for a given style (sync — returns cached or fallback) */
@@ -146,21 +176,20 @@ export async function initDeckStyle(): Promise<void> {
 
     // Restore saved selection, applying one-time default/migration if not done
     const saved = localStorage.getItem(STORAGE_KEY);
-    const migrationDone = localStorage.getItem(MIGRATION_KEY) === '1';
+    const migrationV2Done = localStorage.getItem(MIGRATION_V2_KEY) === '1';
 
-    if (saved === null) {
-        // New user — default to Rider-Waite
-        _currentStyleId = 'community';
-        localStorage.setItem(STORAGE_KEY, _currentStyleId);
-    } else if (!migrationDone && DECK_RENAMES[saved]) {
-        // Existing user with legacy built-in deck — migrate once
-        _currentStyleId = DECK_RENAMES[saved];
+    if (saved === null || !migrationV2Done) {
+        // New user, or existing user seen for the first time since the Random
+        // deck shipped: default/switch to Random. One-time only — the user's
+        // next explicit Settings choice persists and is never overridden.
+        _currentStyleId = RANDOM_DECK_ID;
         localStorage.setItem(STORAGE_KEY, _currentStyleId);
     } else {
         _currentStyleId = saved;
     }
-    // Mark migration as done so future selections of any deck are respected
+    // Mark both migrations done (v1's rename pass is subsumed by the v2 switch).
     localStorage.setItem(MIGRATION_KEY, '1');
+    localStorage.setItem(MIGRATION_V2_KEY, '1');
 
     // Validate saved style still exists
     const allStyles = getAvailableDeckStyles();
@@ -168,37 +197,52 @@ export async function initDeckStyle(): Promise<void> {
         _currentStyleId = 'classic';
     }
 
-    // Load the active deck
-    if (_currentStyleId === 'cats') {
-        await loadCatDeck();
-    } else if (_assetDeckIndex.some(d => d.id === _currentStyleId)) {
-        await loadAssetDeck(_currentStyleId);
+    // Load the active deck (resolving Random to a real deck for this visit)
+    if (_currentStyleId === RANDOM_DECK_ID) {
+        _resolvedStyleId = await resolveRandomDeck();
+    } else {
+        _resolvedStyleId = _currentStyleId;
+        await loadDeckById(_resolvedStyleId);
     }
 }
 
-/** Get the current deck style ID */
+/** Get the current deck style ID (the user's selection, e.g. 'random') */
 export function getCurrentDeckStyle(): string {
     return _currentStyleId;
 }
 
-/** Switch deck style, persist, and load the deck if needed */
+/** Get the deck actually rendered (Random resolved to a real deck) */
+export function getResolvedDeckStyle(): string {
+    return _resolvedStyleId;
+}
+
+/** Switch deck style, persist, and load the deck if needed.
+ *  Selecting Random re-rolls immediately (and on every future app load). */
 export async function setDeckStyle(styleId: string): Promise<void> {
     _currentStyleId = styleId;
     localStorage.setItem(STORAGE_KEY, styleId);
 
-    if (styleId === 'cats') {
-        await loadCatDeck();
-    } else if (_assetDeckIndex.some(d => d.id === styleId)) {
-        await loadAssetDeck(styleId);
+    if (styleId === RANDOM_DECK_ID) {
+        _resolvedStyleId = await resolveRandomDeck();
+    } else {
+        _resolvedStyleId = styleId;
+        await loadDeckById(styleId);
     }
 }
 
-/** Get card back SVG for current style */
-export function cardBackSvg(w: number, h: number): string {
-    return getProviderSync(_currentStyleId).cardBackSvg(w, h);
+/** Re-roll the Random deck for a new reading. No-op unless the user's
+ *  selection is Random — an explicitly chosen deck is never changed. */
+export async function rerollRandomDeck(): Promise<void> {
+    if (_currentStyleId !== RANDOM_DECK_ID) return;
+    _resolvedStyleId = await resolveRandomDeck();
 }
 
-/** Get card face art for current style */
+/** Get card back SVG for the deck in use */
+export function cardBackSvg(w: number, h: number): string {
+    return getProviderSync(_resolvedStyleId).cardBackSvg(w, h);
+}
+
+/** Get card face art for the deck in use */
 export function getCardArt(cardName: string, w: number, h: number): string | null {
-    return getProviderSync(_currentStyleId).getCardArt(cardName, w, h);
+    return getProviderSync(_resolvedStyleId).getCardArt(cardName, w, h);
 }
