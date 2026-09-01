@@ -274,14 +274,15 @@ export class CardSpread extends LitElement {
                     </div>
                 `}
 
-                ${this._dealtCards.length < this._spreadSize ? html`
-                    <div class="dim-text" style="margin-top:1.35em;">Tap a card to draw</div>
-                ` : this._loading ? html`
+                ${this._loading ? html`
                     <div class="progress-section">
                         <div class="spinner spinner-lg"></div>
                         <div class="progress-text">${this._progressText || 'Reading the cards...'}</div>
                     </div>
                 ` : html`
+                    ${this._dealtCards.length < this._spreadSize ? html`
+                        <div class="dim-text" style="margin-top:1.35em;">Tap a card to draw</div>
+                    ` : ''}
                     <div class="question-section stack gap-sm">
                         <div class="question-label">Ask Your Question</div>
                         <dictation-input
@@ -308,11 +309,13 @@ export class CardSpread extends LitElement {
                             `)}
                         </div>
 
-                        <div class="actions center">
-                            <button class="btn btn-primary" @click=${this._fetchReading}>
-                                Get Reading
-                            </button>
-                        </div>
+                        ${this._dealtCards.length === this._spreadSize ? html`
+                            <div class="actions center">
+                                <button class="btn btn-primary" @click=${this._fetchReading}>
+                                    Get Reading
+                                </button>
+                            </div>
+                        ` : ''}
                     </div>
                 `}
             </div>
@@ -417,7 +420,9 @@ export class CardSpread extends LitElement {
     }
 
     private async _fetchReading(): Promise<void> {
-        if (!this.services || this._loading) return;
+        // The question input is visible before all cards are drawn; ignore
+        // submits (e.g. dictation Enter) until the spread is complete.
+        if (!this.services || this._loading || this._dealtCards.length < this._spreadSize) return;
 
         // Always release the mic before network work starts.
         // dictation-input has its own teardown, but this covers the case where
